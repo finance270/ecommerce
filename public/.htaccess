@@ -1,0 +1,19 @@
+# Batas unggah untuk berkas ekspor berukuran besar.
+# Berlaku bila PHP berjalan sebagai modul Apache (webdevops/php-apache).
+<IfModule mod_php.c>
+    php_value upload_max_filesize 64M
+    php_value post_max_size 64M
+    php_value memory_limit 768M
+    php_value max_execution_time 900
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "same-origin"
+</IfModule>
+
+# Jangan sajikan berkas konfigurasi bila document root salah arah.
+<FilesMatch "\.(env|sql|md)$">
+    Require all denied
+</FilesMatch>

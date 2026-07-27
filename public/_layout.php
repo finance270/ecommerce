@@ -1,0 +1,111 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Kerangka halaman.
+ * Dipakai: render_head('Judul'); ... isi ... render_foot();
+ */
+
+function render_head(string $title, string $active = ''): void
+{
+    $user = Auth::user();
+    $app = e(Config::get('app_name'));
+    $nav = [
+        'index.php'          => ['Dashboard', 'dashboard'],
+        'upload.php'         => ['Upload Data', 'upload'],
+        'orders.php'         => ['Pesanan', 'orders'],
+        'products.php'       => ['Produk', 'products'],
+        'performance.php'    => ['Performa', 'performance'],
+        'pnl.php'            => ['Laba & Biaya', 'pnl'],
+        'settlements.php'    => ['Settlement', 'settlements'],
+        'reconciliation.php' => ['Rekonsiliasi', 'recon'],
+        'uploads.php'        => ['Riwayat Upload', 'uploads'],
+    ];
+    ?><!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= e($title) ?> &middot; <?= $app ?></title>
+<link rel="stylesheet" href="assets/app.css?v=3">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#128200;</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><?= $app ?></div>
+  <nav>
+    <?php foreach ($nav as $href => [$label, $key]): ?>
+      <a href="<?= $href ?>" class="<?= $active === $key ? 'active' : '' ?>"><?= e($label) ?></a>
+    <?php endforeach; ?>
+  </nav>
+  <?php if ($user !== null): ?>
+    <div class="user"><?= e($user['full_name'] ?: $user['username']) ?> &middot; <a href="logout.php">Keluar</a></div>
+  <?php endif; ?>
+</header>
+<main class="wrap">
+<?php
+    $f = flash();
+    if ($f !== null) {
+        echo '<div class="alert ' . e($f['type']) . '">' . e($f['msg']) . '</div>';
+    }
+}
+
+function render_foot(): void
+{
+    ?>
+</main>
+<script src="assets/app.js?v=3"></script>
+</body>
+</html><?php
+}
+
+/**
+ * Baris filter standar (tanggal + platform) yang dipakai hampir semua laporan.
+ */
+function render_filter(?string $from, ?string $to, ?string $platform, array $extra = []): void
+{
+    ?>
+  <form method="get" class="filters card" style="margin-bottom:18px">
+    <?php foreach ($extra as $k => $v): ?>
+      <input type="hidden" name="<?= e($k) ?>" value="<?= e($v) ?>">
+    <?php endforeach; ?>
+    <div class="field">
+      <label>Dari tanggal</label>
+      <input type="date" name="from" value="<?= e($from) ?>">
+    </div>
+    <div class="field">
+      <label>Sampai tanggal</label>
+      <input type="date" name="to" value="<?= e($to) ?>">
+    </div>
+    <div class="field">
+      <label>Platform</label>
+      <select name="platform">
+        <option value="">Semua platform</option>
+        <option value="tokopedia" <?= $platform === 'tokopedia' ? 'selected' : '' ?>>Tokopedia</option>
+        <option value="shopee" <?= $platform === 'shopee' ? 'selected' : '' ?>>Shopee</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button class="btn" type="submit">Terapkan</button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <a class="btn ghost" href="?">Reset</a>
+    </div>
+  </form>
+    <?php
+}
+
+function platformBadge(string $p): string
+{
+    $label = $p === 'tokopedia' ? 'Tokopedia' : ($p === 'shopee' ? 'Shopee' : $p);
+    return '<span class="badge ' . e($p) . '">' . e($label) . '</span>';
+}
+
+/** Link ekspor CSV untuk laporan yang sedang dibuka. */
+function exportLink(string $report, array $params = []): string
+{
+    $q = array_merge(['report' => $report], array_intersect_key($_GET, array_flip(['from', 'to', 'platform', 'sort', 'q', 'status'])), $params);
+    return 'export.php?' . http_build_query($q);
+}

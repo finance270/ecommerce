@@ -1,0 +1,69 @@
+services:
+  # ------------------------------------------------------------------
+  # Aplikasi PHP (webdevops/php-apache 8.2)
+  # ------------------------------------------------------------------
+  app:
+    image: webdevops/php-apache:8.2
+    container_name: ecommerce-app
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+    environment:
+      # PENTING: DocumentRoot harus menunjuk ke folder public/
+      WEB_DOCUMENT_ROOT: /app/public
+      PHP_DATE_TIMEZONE: Asia/Jakarta
+      # Berkas ekspor Tokopedia bisa >5 MB, beri ruang lebih.
+      PHP_UPLOAD_MAX_FILESIZE: 64M
+      PHP_POST_MAX_SIZE: 64M
+      PHP_MEMORY_LIMIT: 768M
+      PHP_MAX_EXECUTION_TIME: "900"
+      PHP_MAX_INPUT_TIME: "900"
+      # Koneksi database
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      DB_NAME: ecommerce
+      DB_USER: ecommerce
+      DB_PASS: ubah_kata_sandi_ini
+      APP_NAME: E-Commerce Analytics
+      APP_TZ: Asia/Jakarta
+    volumes:
+      - ./:/app
+      - ./storage/uploads:/app/storage/uploads
+    ports:
+      - "8080:80"
+
+  # ------------------------------------------------------------------
+  # Database (linuxserver/mariadb 11.4.8)
+  # ------------------------------------------------------------------
+  mariadb:
+    image: lscr.io/linuxserver/mariadb:11.4.8
+    container_name: ecommerce-db
+    restart: unless-stopped
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Asia/Jakarta
+      MYSQL_ROOT_PASSWORD: ubah_kata_sandi_root_ini
+      MYSQL_DATABASE: ecommerce
+      MYSQL_USER: ecommerce
+      MYSQL_PASSWORD: ubah_kata_sandi_ini
+    volumes:
+      - ./docker/mariadb:/config
+    ports:
+      - "3306:3306"
+
+  # ------------------------------------------------------------------
+  # phpMyAdmin
+  # ------------------------------------------------------------------
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: ecommerce-pma
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: "3306"
+      UPLOAD_LIMIT: 256M
+    ports:
+      - "8081:80"
