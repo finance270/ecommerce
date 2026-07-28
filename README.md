@@ -50,12 +50,25 @@ container di atas — ubah dulu kata sandinya, lalu:
 docker compose up -d
 ```
 
-### c. Buat database
+### c. Setel memori MariaDB (penting kalau data sudah banyak)
+
+Bawaan MariaDB hanya menyimpan **128 MB** data di memori (`innodb_buffer_pool_size`). Setelah
+beberapa bulan upload, tabel laporan jadi lebih besar dari itu sehingga setiap rekap harus
+membaca disk dan halaman terasa lambat. Jalankan container MariaDB dengan:
+
+```
+--innodb-buffer-pool-size=512M
+```
+
+Naikkan sesuai RAM server (aman: sekitar setengah RAM). Pada `docker-compose.yml` yang
+disertakan, setelan ini sudah ada.
+
+### d. Buat database
 
 Di phpMyAdmin, buat database `ecommerce` dengan collation `utf8mb4_unicode_ci`, lalu buat
 user `ecommerce` dan beri hak akses penuh ke database tersebut.
 
-### d. Jalankan pemasangan
+### e. Jalankan pemasangan
 
 Buka `http://IP-SERVER:8080/setup.php`, isi username dan kata sandi administrator, klik
 **Jalankan pemasangan**. Seluruh tabel dibuat otomatis.
@@ -64,10 +77,12 @@ Buka `http://IP-SERVER:8080/setup.php`, isi username dan kata sandi administrato
 > membuat akun admin.
 
 **Memperbarui aplikasi yang sudah jalan:** salin kode versi baru, lalu buka `setup.php` sekali
-lagi dan klik **Jalankan pemasangan**. Halaman itu menambahkan kolom baru yang belum ada tanpa
-menghapus data (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE` yang dicek dulu). Kalau ada kolom
-baru yang ditambahkan, halaman akan memberi tahu — cukup unggah ulang berkas terkait supaya
-kolom itu terisi.
+lagi dan klik **Jalankan pemasangan**. Halaman itu menambahkan kolom/index baru tanpa menghapus
+data, dan memindahkan arsip baris asli ke tabel terpisah. Kalau ada perubahan yang diterapkan,
+halaman akan memberi tahu — cukup unggah ulang berkas terkait supaya kolom baru terisi.
+
+> Pada database yang sudah besar, langkah ini menyusun ulang tabel `orders` dan `settlements`
+> sehingga **bisa berjalan beberapa menit**. Jalankan sekali saja dan tunggu sampai selesai.
 
 Setelah itu masuk lewat `http://IP-SERVER:8080/login.php`.
 

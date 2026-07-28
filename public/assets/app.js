@@ -92,8 +92,32 @@
     document.querySelectorAll('canvas.chart').forEach(draw);
   }
 
+  /* Bagian laporan yang perhitungannya berat diambil setelah halaman tampil,
+     supaya halaman tidak menggantung menunggu agregasi data besar. */
+  function loadLazy() {
+    document.querySelectorAll('[data-lazy]').forEach(function (el) {
+      var url = el.getAttribute('data-lazy');
+      if (!url || el.dataset.loaded) return;
+      el.dataset.loaded = '1';
+      fetch(url, { credentials: 'same-origin' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function (html) {
+          el.innerHTML = html;
+          drawAll();
+        })
+        .catch(function (err) {
+          el.innerHTML = '<p class="muted">Bagian ini gagal dimuat (' + err.message +
+            '). <a href="' + url + '">Coba buka langsung</a>.</p>';
+        });
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     drawAll();
+    loadLazy();
 
     var t;
     window.addEventListener('resize', function () {

@@ -234,6 +234,21 @@ final class Importer
                 }
             }
 
+            // --- arsip baris asli pesanan ------------------------------
+            $rawRows = [];
+            foreach ($buffer as $orderId => $pack) {
+                $pk = $pkMap[(string) $orderId] ?? null;
+                if ($pk !== null && $pack['raw'] !== null) {
+                    $rawRows[] = [
+                        'order_pk' => $pk,
+                        'raw_json' => json_encode($pack['raw'], JSON_UNESCAPED_UNICODE),
+                    ];
+                }
+            }
+            foreach (array_chunk($rawRows, 200) as $chunk) {
+                $this->bulkUpsert('order_raw', $chunk);
+            }
+
             // --- baris produk -----------------------------------------
             $existingItems = [];
             foreach (array_chunk($orderIds, 500) as $chunk) {
@@ -318,9 +333,8 @@ final class Importer
 
         $row['row_hash'] = sha1(json_encode($row, JSON_UNESCAPED_UNICODE) ?: '');
         $row['upload_id'] = $this->uploadId;
-        if ($pack['raw'] !== null) {
-            $row['raw_json'] = json_encode($pack['raw'], JSON_UNESCAPED_UNICODE);
-        }
+        // Baris aslinya disimpan terpisah di tabel order_raw supaya tabel
+        // orders tetap ramping saat laporan menjumlah ratusan ribu baris.
         return $row;
     }
 
@@ -568,11 +582,13 @@ final class Importer
 
             $rec['row_hash'] = sha1(json_encode([$rec, $fees], JSON_UNESCAPED_UNICODE) ?: '');
             $rec['upload_id'] = $this->uploadId;
-            if (Config::get('keep_raw')) {
-                $rec['raw_json'] = json_encode($this->rawRow($row, $hIdx), JSON_UNESCAPED_UNICODE);
-            }
 
-            $buffer[] = ['rec' => $rec, 'fees' => $fees];
+            $buffer[] = [
+                'rec'  => $rec,
+                'fees' => $fees,
+                'raw'  => Config::get('keep_raw')
+                    ? json_encode($this->rawRow($row, $hIdx), JSON_UNESCAPED_UNICODE) : null,
+            ];
             $this->trackPeriod($rec['settlement_date'] ?? null);
 
             if (count($buffer) >= $this->batchOrders) {
@@ -644,15 +660,18 @@ final class Importer
 
             $write = [];
             $needFees = [];
+            $rawByKey = [];
             foreach ($buffer as $b) {
                 $key = $b['rec']['trx_key'];
                 if (!isset($existing[$key])) {
                     $write[] = $b['rec'];
                     $needFees[$key] = $b['fees'];
+                    $rawByKey[$key] = $b['raw'];
                     $stat['inserted']++;
                 } elseif ($existing[$key] !== $b['rec']['row_hash']) {
                     $write[] = $b['rec'];
                     $needFees[$key] = $b['fees'];
+                    $rawByKey[$key] = $b['raw'];
                     $stat['updated']++;
                 } else {
                     $stat['unchanged']++;
@@ -678,12 +697,16 @@ final class Importer
 
                 $ids = [];
                 $feeRows = [];
+                $rawRows = [];
                 foreach ($needFees as $key => $fees) {
                     $meta = $idMap[$key] ?? null;
                     if ($meta === null) {
                         continue;
                     }
                     $ids[] = (int) $meta['id'];
+                    if (($rawByKey[$key] ?? null) !== null) {
+                        $rawRows[] = ['settlement_id' => (int) $meta['id'], 'raw_json' => $rawByKey[$key]];
+                    }
                     foreach ($fees as $f) {
                         $feeRows[] = [
                             'settlement_id'   => (int) $meta['id'],
@@ -706,6 +729,9 @@ final class Importer
                 }
                 foreach (array_chunk($feeRows, 500) as $chunk) {
                     $this->bulkUpsert('settlement_fees', $chunk);
+                }
+                foreach (array_chunk($rawRows, 200) as $chunk) {
+                    $this->bulkUpsert('settlement_raw', $chunk);
                 }
                 $this->syncFeeDictionary($platform, $feeRows);
             }

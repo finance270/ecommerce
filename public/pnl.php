@@ -16,15 +16,23 @@ if ($from === null && $to === null && $range['settlement_to'] !== null) {
 $pnl     = Reports::pnl($from, $to, $platform);
 $ring    = $pnl['ringkasan'];
 $kategori = $pnl['kategori'];
-$detail  = Reports::feeDetail($from, $to, $platform);
 $bridge  = Reports::bridge($from, $to, $platform);
 $bulanan = Reports::monthlySettlement($from, $to, $platform);
 $tarik   = Reports::withdrawals($from, $to, $platform);
 $tot     = Reports::bridgeTotals($bridge);
 
 $prodSort = q('psort', 'bersih');
-$produk   = Reports::productNet($from, $to, $platform, 100, (string) $prodSort);
-$cover    = Reports::productNetCoverage($from, $to, $platform);
+
+// Dua bagian terberat (alokasi per produk & rincian tiap komponen biaya)
+// diambil lewat permintaan terpisah supaya halaman langsung tampil dan
+// tidak menggantung saat data sudah menumpuk.
+$lazyParams = ['from' => $from, 'to' => $to, 'platform' => $platform];
+$lazyProduk = 'pnl_section.php?' . http_build_query(
+    array_filter($lazyParams + ['section' => 'produk', 'psort' => $prodSort], static fn($v) => $v !== null && $v !== '')
+);
+$lazyBiaya = 'pnl_section.php?' . http_build_query(
+    array_filter($lazyParams + ['section' => 'biaya'], static fn($v) => $v !== null && $v !== '')
+);
 
 $kotor  = $tot['kotor'];
 $biaya  = $tot['biaya'];
@@ -265,86 +273,9 @@ render_head('Laba & Biaya', 'pnl');
     Jadi angka di bawah adalah <b>alokasi</b>, bukan angka resmi platform per produk &mdash; tapi
     totalnya tetap sama dengan total settlement pesanan yang ikut terhitung.
   </p>
-
-  <?php
-  $cov = $cover['total_bersih'] != 0.0 ? $cover['covered_bersih'] / $cover['total_bersih'] * 100 : 0;
-  if ($cover['covered_pesanan'] < $cover['total_pesanan']): ?>
-    <div class="alert warn" style="margin-bottom:14px">
-      Baru <b><?= number_format($cov, 1, ',', '.') ?>%</b> dari dana bersih yang bisa dipecah ke produk
-      (<?= num($cover['covered_pesanan']) ?> dari <?= num($cover['total_pesanan']) ?> pesanan).
-      Sisanya settlement yang <b>berkas pesanannya belum diunggah</b>, sehingga isi produknya belum diketahui.
-      Unggah berkas <i>Semua Pesanan</i> / <i>Order</i> untuk periode terkait agar analisis ini lengkap.
-    </div>
-  <?php endif; ?>
-
-  <form method="get" class="filters" style="margin-bottom:14px">
-    <?php foreach (['from' => $from, 'to' => $to, 'platform' => $platform] as $k => $v): ?>
-      <?php if ($v !== null): ?><input type="hidden" name="<?= e($k) ?>" value="<?= e($v) ?>"><?php endif; ?>
-    <?php endforeach; ?>
-    <div class="field">
-      <label>Urutkan produk</label>
-      <select name="psort" onchange="this.form.submit()">
-        <option value="bersih" <?= $prodSort === 'bersih' ? 'selected' : '' ?>>Bersih tertinggi</option>
-        <option value="kotor"  <?= $prodSort === 'kotor'  ? 'selected' : '' ?>>Kotor tertinggi</option>
-        <option value="qty"    <?= $prodSort === 'qty'    ? 'selected' : '' ?>>Terjual terbanyak</option>
-        <option value="marjin" <?= $prodSort === 'marjin' ? 'selected' : '' ?>>Marjin terbaik</option>
-      </select>
-    </div>
-  </form>
-
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th>#</th><th>Produk</th><th>Platform</th>
-        <th class="num">Pesanan</th><th class="num">Qty</th>
-        <th class="num">Kotor</th><th class="num">Diskon &amp; voucher</th>
-        <th class="num">Pengembalian</th><th class="num">Biaya platform</th>
-        <th class="num">Bersih</th><th class="num">Marjin</th>
-      </tr></thead>
-      <tbody>
-      <?php
-      $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'pengembalian' => 0.0, 'biaya' => 0.0, 'bersih' => 0.0, 'qty' => 0.0];
-      foreach ($produk as $i => $p):
-          foreach ($pt as $k => $_) {
-              $pt[$k] += (float) $p[$k];
-          }
-          $m = $p['marjin'] === null ? null : (float) $p['marjin']; ?>
-        <tr>
-          <td class="muted"><?= $i + 1 ?></td>
-          <td class="trunc" title="<?= e($p['produk']) ?>"><?= e($p['produk']) ?></td>
-          <td><?= platformBadge((string) $p['platform']) ?></td>
-          <td class="num"><?= num($p['pesanan']) ?></td>
-          <td class="num"><?= num($p['qty']) ?></td>
-          <td class="num"><?= rp($p['kotor']) ?></td>
-          <td class="num <?= (float) $p['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['potongan']) ?></td>
-          <td class="num <?= (float) $p['pengembalian'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['pengembalian']) ?></td>
-          <td class="num neg"><?= rp($p['biaya']) ?></td>
-          <td class="num pos"><b><?= rp($p['bersih']) ?></b></td>
-          <td class="num <?= $m === null ? 'muted' : ($m < 50 ? 'neg' : '') ?>">
-            <?= $m === null ? '-' : number_format($m, 1, ',', '.') . '%' ?>
-          </td>
-        </tr>
-      <?php endforeach; ?>
-      <?php if ($produk === []): ?>
-        <tr><td colspan="11" class="muted">
-          Belum bisa dihitung. Perlu berkas pesanan <i>dan</i> berkas laporan penghasilan
-          untuk periode yang sama.
-        </td></tr>
-      <?php endif; ?>
-      </tbody>
-      <?php if ($produk !== []): ?>
-      <tfoot><tr>
-        <td colspan="4">Total <?= count($produk) ?> produk teratas</td>
-        <td class="num"><?= num($pt['qty']) ?></td>
-        <td class="num"><?= rp($pt['kotor']) ?></td>
-        <td class="num neg"><?= rp($pt['potongan']) ?></td>
-        <td class="num neg"><?= rp($pt['pengembalian']) ?></td>
-        <td class="num neg"><?= rp($pt['biaya']) ?></td>
-        <td class="num pos"><?= rp($pt['bersih']) ?></td>
-        <td class="num"><?= $pt['kotor'] > 0 ? number_format($pt['bersih'] / $pt['kotor'] * 100, 1, ',', '.') . '%' : '-' ?></td>
-      </tr></tfoot>
-      <?php endif; ?>
-    </table>
+  <div data-lazy="<?= e($lazyProduk) ?>">
+    <p class="muted">Menghitung alokasi per produk&hellip;</p>
+    <noscript><a href="<?= e($lazyProduk) ?>">Buka tabel laba bersih per produk</a></noscript>
   </div>
 </div>
 
@@ -357,25 +288,9 @@ render_head('Laba & Biaya', 'pnl');
     Nama komponen persis seperti pada berkas ekspor platform, sehingga angkanya bisa ditelusuri balik
     ke laporan asli saat audit.
   </p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th>Platform</th><th>Komponen biaya (nama asli platform)</th><th>Kategori</th>
-        <th class="num">Jumlah transaksi</th><th class="num">Total</th>
-      </tr></thead>
-      <tbody>
-      <?php foreach ($detail as $d): $v = (float) $d['total']; ?>
-        <tr>
-          <td><?= platformBadge((string) $d['platform']) ?></td>
-          <td><?= e($d['fee_label']) ?></td>
-          <td><span class="badge muted"><?= e(Profiles::LABELS[$d['fee_category']] ?? $d['fee_category']) ?></span></td>
-          <td class="num"><?= num($d['jumlah_transaksi']) ?></td>
-          <td class="num <?= $v < 0 ? 'neg' : 'pos' ?>"><?= rp($v) ?></td>
-        </tr>
-      <?php endforeach; ?>
-      <?php if ($detail === []): ?><tr><td colspan="5" class="muted">Belum ada data.</td></tr><?php endif; ?>
-      </tbody>
-    </table>
+  <div data-lazy="<?= e($lazyBiaya) ?>">
+    <p class="muted">Memuat rincian komponen biaya&hellip;</p>
+    <noscript><a href="<?= e($lazyBiaya) ?>">Buka rincian komponen biaya</a></noscript>
   </div>
 </div>
 

@@ -14,6 +14,64 @@ require_once __DIR__ . '/_layout.php';
  *
  * @return string[] daftar perubahan yang benar-benar diterapkan
  */
+function columnExists(PDO $pdo, string $dbName, string $table, string $column): bool
+{
+    return (int) ($pdo->query(
+        "SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_schema = " . $pdo->quote($dbName) . "
+           AND table_name = " . $pdo->quote($table) . "
+           AND column_name = " . $pdo->quote($column)
+    )->fetchColumn() ?: 0) > 0;
+}
+
+/**
+ * Memindahkan kolom raw_json ke tabel arsip terpisah.
+ *
+ * Kolom JSON berukuran 2-3 KB per baris membuat tabel orders/settlements
+ * membengkak sampai ratusan MB, sehingga setiap perhitungan laporan harus
+ * membaca data yang sebenarnya tidak dipakai. Disalin bertahap agar tidak
+ * membebani server kecil.
+ */
+function moveRawJson(PDO $pdo, string $dbName, string $table, string $rawTable, string $fkColumn): bool
+{
+    if (!columnExists($pdo, $dbName, $table, 'raw_json')) {
+        return false;
+    }
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS `{$rawTable}` (
+        `{$fkColumn}` BIGINT UNSIGNED NOT NULL,
+        raw_json LONGTEXT NULL,
+        PRIMARY KEY (`{$fkColumn}`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $lastId = 0;
+    do {
+        $stmt = $pdo->prepare(
+            "INSERT IGNORE INTO `{$rawTable}` (`{$fkColumn}`, raw_json)
+             SELECT id, raw_json FROM `{$table}`
+             WHERE id > ? AND raw_json IS NOT NULL
+             ORDER BY id LIMIT 2000"
+        );
+        $stmt->execute([$lastId]);
+
+        $next = (int) $pdo->query(
+            "SELECT MAX(id) FROM (SELECT id FROM `{$table}` WHERE id > {$lastId} ORDER BY id LIMIT 2000) x"
+        )->fetchColumn();
+        if ($next <= $lastId) {
+            break;
+        }
+        $lastId = $next;
+    } while (true);
+
+    $pdo->exec("ALTER TABLE `{$table}` DROP COLUMN raw_json");
+
+    // MariaDB membuang kolom secara "instant": datanya masih menempati baris
+    // sampai tabel dibangun ulang. Tanpa langkah ini ukuran tabel tidak turun
+    // dan laporan tetap lambat.
+    $pdo->exec("ALTER TABLE `{$table}` FORCE");
+    return true;
+}
+
 function runMigrations(PDO $pdo, string $dbName): array
 {
     $wanted = [
@@ -45,6 +103,41 @@ function runMigrations(PDO $pdo, string $dbName): array
             $done[] = "{$table}.{$column}";
         }
     }
+
+    foreach ([['orders', 'order_raw', 'order_pk'], ['settlements', 'settlement_raw', 'settlement_id']] as [$t, $rt, $fk]) {
+        $tableExists = (int) ($pdo->query(
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = " . $pdo->quote($dbName) . " AND table_name = " . $pdo->quote($t)
+        )->fetchColumn() ?: 0);
+        if ($tableExists > 0 && moveRawJson($pdo, $dbName, $t, $rt, $fk)) {
+            $done[] = "{$t}.raw_json dipindah ke {$rt}";
+        }
+    }
+
+    // Index tambahan untuk mempercepat laporan pada instalasi lama.
+    foreach ([
+        ['settlements', 'idx_settlements_pf_date', 'ALTER TABLE settlements ADD INDEX idx_settlements_pf_date (platform, settlement_date)'],
+        ['settlement_fees', 'idx_fee_date', 'ALTER TABLE settlement_fees ADD INDEX idx_fee_date (settlement_date, platform)'],
+        ['settlements', 'idx_settlements_alloc',
+         'ALTER TABLE settlements ADD INDEX idx_settlements_alloc (platform, order_id, settlement_date, gross_amount, total_potongan, refund_amount, total_fee, net_amount)'],
+        ['orders', 'idx_orders_alloc', 'ALTER TABLE orders ADD INDEX idx_orders_alloc (platform, order_id, items_subtotal_before)'],
+    ] as [$t, $idx, $sql]) {
+        $has = (int) ($pdo->query(
+            "SELECT COUNT(*) FROM information_schema.statistics
+             WHERE table_schema = " . $pdo->quote($dbName) . "
+               AND table_name = " . $pdo->quote($t) . "
+               AND index_name = " . $pdo->quote($idx)
+        )->fetchColumn() ?: 0);
+        $tableExists = (int) ($pdo->query(
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = " . $pdo->quote($dbName) . " AND table_name = " . $pdo->quote($t)
+        )->fetchColumn() ?: 0);
+        if ($tableExists > 0 && $has === 0) {
+            $pdo->exec($sql);
+            $done[] = "index {$idx}";
+        }
+    }
+
     return $done;
 }
 

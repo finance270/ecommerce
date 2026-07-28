@@ -130,7 +130,6 @@ CREATE TABLE IF NOT EXISTS orders (
   upload_id                BIGINT UNSIGNED NULL,
   first_seen_at            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at               DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  raw_json                 LONGTEXT     NULL,
 
   PRIMARY KEY (id),
   UNIQUE KEY uq_orders_platform_order (platform, order_id),
@@ -138,7 +137,8 @@ CREATE TABLE IF NOT EXISTS orders (
   KEY idx_orders_status (platform, status_norm, order_date),
   KEY idx_orders_channel (channel),
   KEY idx_orders_province (province),
-  KEY idx_orders_upload (upload_id)
+  KEY idx_orders_upload (upload_id),
+  KEY idx_orders_alloc (platform, order_id, items_subtotal_before)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -243,12 +243,16 @@ CREATE TABLE IF NOT EXISTS settlements (
   upload_id         BIGINT UNSIGNED NULL,
   first_seen_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  raw_json          LONGTEXT NULL,
 
   PRIMARY KEY (id),
   UNIQUE KEY uq_settlements_trx (platform, trx_key),
   KEY idx_settlements_order (platform, order_id),
   KEY idx_settlements_date (settlement_date),
+  KEY idx_settlements_pf_date (platform, settlement_date),
+  -- Index penutup untuk agregasi per pesanan (alokasi laba per produk):
+  -- seluruh kolom yang dibutuhkan ada di index, jadi tabelnya tidak disentuh.
+  KEY idx_settlements_alloc (platform, order_id, settlement_date, gross_amount,
+                             total_potongan, refund_amount, total_fee, net_amount),
   KEY idx_settlements_type (platform, trx_type),
   KEY idx_settlements_upload (upload_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -270,7 +274,8 @@ CREATE TABLE IF NOT EXISTS settlement_fees (
   PRIMARY KEY (id),
   UNIQUE KEY uq_fee (settlement_id, fee_code),
   KEY idx_fee_category (fee_category, settlement_date),
-  KEY idx_fee_platform (platform, settlement_date)
+  KEY idx_fee_platform (platform, settlement_date),
+  KEY idx_fee_date (settlement_date, platform)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -294,6 +299,24 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   PRIMARY KEY (id),
   UNIQUE KEY uq_withdrawal (platform, reference_id),
   KEY idx_withdrawal_date (withdraw_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Arsip baris asli (jejak audit).
+-- Dipisah dari tabel utama supaya baris orders/settlements tetap ramping:
+-- kolom JSON berukuran 2-3 KB per baris membuat setiap perhitungan laporan
+-- harus membaca ratusan MB tanpa perlu.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS order_raw (
+  order_pk BIGINT UNSIGNED NOT NULL,
+  raw_json LONGTEXT NULL,
+  PRIMARY KEY (order_pk)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS settlement_raw (
+  settlement_id BIGINT UNSIGNED NOT NULL,
+  raw_json      LONGTEXT NULL,
+  PRIMARY KEY (settlement_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------

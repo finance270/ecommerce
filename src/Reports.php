@@ -141,18 +141,43 @@ final class Reports
         ) ?? [];
 
         [$w2, $a2] = self::filter('settlement_date', $from, $to, $platform);
-        // 'total', 'rincian', dan 'informasi' sengaja tidak ikut: isinya kolom
-        // total bawaan platform, pecahan kolom lain, dan kolom keterangan.
-        // Kalau ikut dijumlah, angkanya dobel dan menyesatkan.
-        $byCat = Db::all(
-            "SELECT fee_category, SUM(amount) AS total, COUNT(*) AS baris
-             FROM settlement_fees
-             WHERE {$w2} AND fee_category NOT IN ('rincian','total','informasi')
-             GROUP BY fee_category ORDER BY total ASC",
-            $a2
-        );
+        return ['ringkasan' => $head, 'kategori' => self::categoryTotals($from, $to, $platform)];
+    }
 
-        return ['ringkasan' => $head, 'kategori' => $byCat];
+    /**
+     * Total per kategori akuntansi.
+     *
+     * Dibaca dari kolom fee_* pada tabel `settlements`, bukan dengan
+     * menjumlah ulang `settlement_fees`. Nilainya identik (kolom itu diisi
+     * dari rincian yang sama saat import) tetapi tabelnya jauh lebih kecil,
+     * sehingga halaman tetap ringan saat data sudah menumpuk.
+     *
+     * @return list<array{fee_category:string,total:float}>
+     */
+    public static function categoryTotals(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+
+        $select = [];
+        foreach (Profiles::FEE_CATEGORIES as $cat) {
+            $select[] = "COALESCE(SUM(fee_{$cat}),0) AS `c_{$cat}`";
+        }
+        $select[] = 'COALESCE(SUM(total_potongan),0)    AS `c_potongan`';
+        $select[] = 'COALESCE(SUM(refund_amount),0)     AS `c_refund`';
+        $select[] = 'COALESCE(SUM(adjustment_amount),0) AS `c_penyesuaian`';
+
+        $row = Db::one('SELECT ' . implode(', ', $select) . " FROM settlements WHERE {$w}", $a) ?? [];
+
+        $out = [];
+        foreach ($row as $key => $val) {
+            $v = (float) $val;
+            if ($v === 0.0) {
+                continue;
+            }
+            $out[] = ['fee_category' => substr($key, 2), 'total' => $v];
+        }
+        usort($out, static fn(array $x, array $y): int => $x['total'] <=> $y['total']);
+        return $out;
     }
 
     /**
@@ -215,20 +240,40 @@ final class Reports
         return $t;
     }
 
-    /** Rincian per komponen biaya (nama kolom asli dari platform). */
+    /**
+     * Rincian per komponen biaya (nama kolom asli dari platform).
+     *
+     * Pengelompokan memakai fee_code (kode pendek), bukan fee_label yang
+     * panjang - satu kode selalu punya satu label, jadi hasilnya sama tetapi
+     * jauh lebih murah. Labelnya diambil dari tabel kamus yang kecil.
+     */
     public static function feeDetail(?string $from, ?string $to, ?string $platform, bool $includeRincian = false): array
     {
         [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
         $extra = $includeRincian ? '' : " AND fee_category <> 'rincian'";
-        return Db::all(
-            "SELECT platform, fee_code, fee_label, fee_category,
+
+        $rows = Db::all(
+            "SELECT platform, fee_code, fee_category,
                     SUM(amount) AS total, COUNT(*) AS jumlah_transaksi
              FROM settlement_fees
              WHERE {$w}{$extra}
-             GROUP BY platform, fee_code, fee_label, fee_category
+             GROUP BY platform, fee_code, fee_category
              ORDER BY ABS(SUM(amount)) DESC",
             $a
         );
+        if ($rows === []) {
+            return [];
+        }
+
+        $labels = [];
+        foreach (Db::all('SELECT platform, fee_code, fee_label FROM fee_dictionary') as $d) {
+            $labels[$d['platform'] . '|' . $d['fee_code']] = $d['fee_label'];
+        }
+        foreach ($rows as &$r) {
+            $r['fee_label'] = $labels[$r['platform'] . '|' . $r['fee_code']]
+                ?? str_replace('_', ' ', (string) $r['fee_code']);
+        }
+        return $rows;
     }
 
     /** Arus settlement per bulan - untuk jurnal / rekap bulanan. */
@@ -349,6 +394,10 @@ final class Reports
             default  => 'bersih',
         };
 
+        // Urutan join sengaja dimulai dari settlement yang sudah tersaring
+        // tanggal (paling sedikit barisnya), lalu ke orders lewat kunci unik,
+        // baru ke baris produknya. Kalau dibalik, MariaDB memindai seluruh
+        // tabel order_items dan halaman jadi lambat saat data menumpuk.
         return Db::all(
             "SELECT i.platform,
                     COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
@@ -363,9 +412,7 @@ final class Reports
                          THEN SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
                               / SUM(st.gross_amount * i.subtotal_before_disc / o.items_subtotal_before) * 100
                          ELSE NULL END AS marjin
-             FROM order_items i
-             JOIN orders o ON o.id = i.order_pk AND o.items_subtotal_before > 0
-             JOIN (
+             FROM (
                  SELECT platform, order_id,
                         SUM(gross_amount)      AS gross_amount,
                         SUM(total_potongan)    AS total_potongan,
@@ -375,7 +422,11 @@ final class Reports
                  FROM settlements
                  WHERE {$w}
                  GROUP BY platform, order_id
-             ) st ON st.platform = i.platform AND st.order_id = i.order_id
+             ) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
              GROUP BY i.platform, produk
              ORDER BY {$order} DESC
              LIMIT {$limit}",
@@ -389,31 +440,28 @@ final class Reports
      */
     public static function productNetCoverage(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
-        $total = Db::one(
-            "SELECT COUNT(DISTINCT CONCAT(platform,'|',order_id)) AS pesanan,
-                    COALESCE(SUM(net_amount),0) AS bersih
-             FROM settlements WHERE {$w}",
+        // Satu kali baca settlements dengan LEFT JOIN ke orders; tidak perlu
+        // sub-query beragregasi supaya tetap ringan saat data menumpuk.
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform, 's');
+        $row = Db::one(
+            "SELECT COUNT(DISTINCT s.platform, s.order_id) AS total_pesanan,
+                    COALESCE(SUM(s.net_amount),0)          AS total_bersih,
+                    COUNT(DISTINCT CASE WHEN o.id IS NOT NULL THEN CONCAT(s.platform,'|',s.order_id) END)
+                                                           AS covered_pesanan,
+                    COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN s.net_amount ELSE 0 END),0)
+                                                           AS covered_bersih
+             FROM settlements s
+             LEFT JOIN orders o ON o.platform = s.platform AND o.order_id = s.order_id
+                               AND o.items_subtotal_before > 0
+             WHERE {$w}",
             $a
-        ) ?? ['pesanan' => 0, 'bersih' => 0];
-
-        $covered = Db::one(
-            "SELECT COUNT(*) AS pesanan, COALESCE(SUM(st.net_amount),0) AS bersih
-             FROM (
-                 SELECT platform, order_id, SUM(net_amount) AS net_amount
-                 FROM settlements WHERE {$w}
-                 GROUP BY platform, order_id
-             ) st
-             JOIN orders o ON o.platform = st.platform AND o.order_id = st.order_id
-                          AND o.items_subtotal_before > 0",
-            $a
-        ) ?? ['pesanan' => 0, 'bersih' => 0];
+        ) ?? [];
 
         return [
-            'total_pesanan'   => (int) $total['pesanan'],
-            'total_bersih'    => (float) $total['bersih'],
-            'covered_pesanan' => (int) $covered['pesanan'],
-            'covered_bersih'  => (float) $covered['bersih'],
+            'total_pesanan'   => (int) ($row['total_pesanan'] ?? 0),
+            'total_bersih'    => (float) ($row['total_bersih'] ?? 0),
+            'covered_pesanan' => (int) ($row['covered_pesanan'] ?? 0),
+            'covered_bersih'  => (float) ($row['covered_bersih'] ?? 0),
         ];
     }
 

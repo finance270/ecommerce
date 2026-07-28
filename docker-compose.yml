@@ -51,6 +51,13 @@ services:
       - ./docker/mariadb:/config
     ports:
       - "3306:3306"
+    # Bawaan MariaDB hanya menyimpan 128 MB data di memori. Setelah beberapa
+    # bulan upload, tabel laporan lebih besar dari itu sehingga setiap grafik
+    # dan rekap harus membaca disk dan terasa lambat. Naikkan sesuai RAM yang
+    # tersedia (aman: sekitar setengah RAM server).
+    command: >
+      --innodb-buffer-pool-size=512M
+      --innodb-flush-neighbors=0
 
   # ------------------------------------------------------------------
   # phpMyAdmin
