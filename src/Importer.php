@@ -523,6 +523,7 @@ final class Importer
             $used = [];
             $bucket = array_fill_keys(Profiles::FEE_CATEGORIES, 0.0);
             $feeTotal = 0.0;
+            $potonganTotal = 0.0;
 
             foreach ($headerLabels as $colIdx => $label) {
                 if (isset($skip[$label])) {
@@ -540,6 +541,8 @@ final class Importer
                 if (in_array($cat, Profiles::FEE_CATEGORIES, true)) {
                     $bucket[$cat] += $amount;
                     $feeTotal += $amount;
+                } elseif ($cat === 'potongan') {
+                    $potonganTotal += $amount;
                 }
                 $code = Value::slug($label);
                 if (isset($used[$code])) {
@@ -558,6 +561,7 @@ final class Importer
             foreach ($bucket as $cat => $sum) {
                 $rec['fee_' . $cat] = round($sum, 2);
             }
+            $rec['total_potongan'] = round($potonganTotal, 2);
             if ($platform === 'shopee') {
                 $rec['total_fee'] = round($feeTotal, 2);
             }

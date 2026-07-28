@@ -63,6 +63,12 @@ Buka `http://IP-SERVER:8080/setup.php`, isi username dan kata sandi administrato
 > Alternatif: impor `database/schema.sql` lewat phpMyAdmin, lalu buka `setup.php` untuk
 > membuat akun admin.
 
+**Memperbarui aplikasi yang sudah jalan:** salin kode versi baru, lalu buka `setup.php` sekali
+lagi dan klik **Jalankan pemasangan**. Halaman itu menambahkan kolom baru yang belum ada tanpa
+menghapus data (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE` yang dicek dulu). Kalau ada kolom
+baru yang ditambahkan, halaman akan memberi tahu — cukup unggah ulang berkas terkait supaya
+kolom itu terisi.
+
 Setelah itu masuk lewat `http://IP-SERVER:8080/login.php`.
 
 ---
@@ -129,7 +135,7 @@ akan **0**.
 | **Pesanan** | Cari/filter seluruh pesanan, buka detail per pesanan |
 | **Produk** | Produk & varian terlaris, qty terjual, omzet, retur |
 | **Performa** | Rekap mingguan & bulanan + pertumbuhan, metode bayar, kurir, provinsi |
-| **Laba & Biaya** | Jembatan angka pendapatan → biaya → dana diterima, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
+| **Laba & Biaya** | Ringkasan seluruh pengurang dari pendapatan kotor sampai dana diterima, jembatan angka per platform, rekap bulanan, **laba bersih per produk**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses |
@@ -164,12 +170,30 @@ dikelompokkan sebagai **potongan pendapatan** (mengikuti pengelompokan Shopee se
 bagian *1. Total Pendapatan*), bukan sebagai biaya platform. Karena itu angka **Biaya platform**
 yang tampil sama persis dengan *2. Total Pengeluaran* pada laporan Shopee.
 
-Jembatan angkanya selalu berimbang:
+Jembatan angkanya selalu berimbang, dan **seluruh pengurang ditampilkan** di halaman
+**Laba & Biaya** — pada ringkasan, pada jembatan per platform, maupun pada rekap bulanan:
 
 ```
-pendapatan kotor + potongan + pengembalian dana + biaya platform
-+ penyesuaian + selisih pencatatan = dana diterima bersih
+pendapatan kotor + diskon & voucher penjual + pengembalian dana
++ biaya platform + penyesuaian + selisih pencatatan = dana diterima bersih
 ```
+
+### Laba bersih per produk
+
+Platform hanya memberi angka settlement **per pesanan**, tidak per produk. Untuk mengetahui
+bersih tiap produk, aplikasi membagi nilai settlement ke setiap baris produk sesuai porsinya:
+
+```
+porsi produk = nilai produk sebelum diskon / total nilai pesanan sebelum diskon
+```
+
+Angka per produk karenanya berupa **alokasi**, bukan angka resmi platform per produk — tapi
+totalnya tetap sama persis dengan total settlement pesanan yang ikut terhitung, jadi tidak ada
+nilai yang bocor atau tercipta.
+
+Karena butuh isi pesanan, produk hanya bisa dihitung untuk pesanan yang **berkas pesanan dan
+berkas penghasilannya sudah sama-sama diunggah**. Halaman menampilkan berapa persen dana bersih
+yang berhasil dipecah ke produk, supaya Anda tahu kalau angkanya belum mencakup semua.
 
 ### Dua sudut pandang tanggal
 

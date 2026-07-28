@@ -8,10 +8,51 @@ require_once __DIR__ . '/_layout.php';
  * Setelah ada user, halaman ini hanya bisa diakses admin (untuk migrasi ulang).
  */
 
+/**
+ * Menambahkan kolom yang belum ada pada instalasi lama.
+ * Aman dijalankan berulang: kolom yang sudah ada dilewati.
+ *
+ * @return string[] daftar perubahan yang benar-benar diterapkan
+ */
+function runMigrations(PDO $pdo, string $dbName): array
+{
+    $wanted = [
+        ['settlements', 'total_potongan',
+         "ALTER TABLE settlements ADD COLUMN total_potongan DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER discount_seller"],
+    ];
+
+    $done = [];
+    foreach ($wanted as [$table, $column, $sql]) {
+        // Tabel belum ada = pemasangan baru; kolomnya akan ikut terbuat
+        // lewat CREATE TABLE pada schema.sql.
+        $tableExists = (int) ($pdo->query(
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = " . $pdo->quote($dbName) . "
+               AND table_name = " . $pdo->quote($table)
+        )->fetchColumn() ?: 0);
+        if ($tableExists === 0) {
+            continue;
+        }
+
+        $exists = (int) ($pdo->query(
+            "SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = " . $pdo->quote($dbName) . "
+               AND table_name = " . $pdo->quote($table) . "
+               AND column_name = " . $pdo->quote($column)
+        )->fetchColumn() ?: 0);
+        if ($exists === 0) {
+            $pdo->exec($sql);
+            $done[] = "{$table}.{$column}";
+        }
+    }
+    return $done;
+}
+
 $err = null;
 $done = false;
 $dbOk = false;
 $hasUsers = false;
+$migrated = [];
 
 try {
     Db::conn();
@@ -40,6 +81,11 @@ if ($dbOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $pdo = Db::conn();
+
+        // Migrasi kolom dijalankan LEBIH DULU: schema.sql memuat CREATE OR
+        // REPLACE VIEW yang sudah memakai kolom baru, jadi kolomnya harus ada
+        // sebelum view dibuat ulang.
+        $migrated = runMigrations($pdo, (string) Config::get('db_name'));
 
         // Buang dulu baris komentar, baru dipecah per pernyataan. Kalau komentar
         // tidak dibuang lebih dulu, blok komentar di atas tiap CREATE TABLE ikut
@@ -95,6 +141,10 @@ render_head('Pemasangan', '');
 <?php if ($done): ?>
   <div class="alert ok">
     <b>Berhasil.</b> Struktur database sudah dibuat<?= $hasUsers ? '' : ' dan akun admin sudah aktif' ?>.
+    <?php if ($migrated !== []): ?>
+      <br>Kolom baru ditambahkan: <code class="k"><?= e(implode(', ', $migrated)) ?></code>.
+      Silakan <b>unggah ulang berkas laporan penghasilan</b> agar kolom tersebut terisi.
+    <?php endif; ?>
     <a href="login.php">Lanjut ke halaman masuk</a>.
   </div>
 <?php elseif ($dbOk): ?>

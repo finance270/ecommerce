@@ -175,6 +175,8 @@ final class Reports
         $rows = Db::all(
             "SELECT platform,
                     COALESCE(SUM(gross_amount),0)      AS kotor,
+                    COALESCE(SUM(total_potongan),0)    AS potongan,
+                    COALESCE(SUM(refund_amount),0)     AS refund,
                     COALESCE(SUM(total_fee),0)         AS biaya,
                     COALESCE(SUM(adjustment_amount),0) AS penyesuaian,
                     COALESCE(SUM(net_amount),0)        AS bersih
@@ -182,32 +184,15 @@ final class Reports
             $a
         );
 
-        // Potongan & pengembalian diambil per kategori, bukan daftar kolom
-        // tetap, supaya kolom baru dari platform ikut terhitung otomatis.
-        [$w2, $a2] = self::filter('settlement_date', $from, $to, $platform);
-        $extra = [];
-        foreach (Db::all(
-            "SELECT platform, fee_category, COALESCE(SUM(amount),0) AS total
-             FROM settlement_fees
-             WHERE {$w2} AND fee_category IN ('potongan','refund')
-             GROUP BY platform, fee_category",
-            $a2
-        ) as $r) {
-            $extra[$r['platform']][$r['fee_category']] = (float) $r['total'];
-        }
-
         $out = [];
         foreach ($rows as $r) {
-            $p = (string) $r['platform'];
-            $potongan = $extra[$p]['potongan'] ?? 0.0;
-            $refund   = $extra[$p]['refund'] ?? 0.0;
-            $subtotal = (float) $r['kotor'] + $potongan + $refund
+            $subtotal = (float) $r['kotor'] + (float) $r['potongan'] + (float) $r['refund']
                 + (float) $r['biaya'] + (float) $r['penyesuaian'];
             $out[] = [
-                'platform'    => $p,
+                'platform'    => (string) $r['platform'],
                 'kotor'       => (float) $r['kotor'],
-                'potongan'    => $potongan,
-                'refund'      => $refund,
+                'potongan'    => (float) $r['potongan'],
+                'refund'      => (float) $r['refund'],
                 'biaya'       => (float) $r['biaya'],
                 'penyesuaian' => (float) $r['penyesuaian'],
                 'selisih'     => (float) $r['bersih'] - $subtotal,
@@ -215,6 +200,19 @@ final class Reports
             ];
         }
         return $out;
+    }
+
+    /** Jumlahkan seluruh baris jembatan menjadi satu ringkasan. */
+    public static function bridgeTotals(array $bridge): array
+    {
+        $t = ['kotor' => 0.0, 'potongan' => 0.0, 'refund' => 0.0, 'biaya' => 0.0,
+              'penyesuaian' => 0.0, 'selisih' => 0.0, 'bersih' => 0.0];
+        foreach ($bridge as $b) {
+            foreach ($t as $k => $_) {
+                $t[$k] += (float) ($b[$k] ?? 0);
+            }
+        }
+        return $t;
     }
 
     /** Rincian per komponen biaya (nama kolom asli dari platform). */
@@ -237,18 +235,26 @@ final class Reports
     public static function monthlySettlement(?string $from, ?string $to, ?string $platform): array
     {
         [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
-        return Db::all(
+        $rows = Db::all(
             "SELECT DATE_FORMAT(settlement_date,'%Y-%m') AS bulan, platform,
                     COUNT(*) AS trx,
-                    COALESCE(SUM(gross_amount),0) AS pendapatan_kotor,
-                    COALESCE(SUM(total_fee),0)    AS total_biaya,
-                    COALESCE(SUM(refund_amount),0) AS pengembalian,
-                    COALESCE(SUM(net_amount),0)   AS dana_diterima
+                    COALESCE(SUM(gross_amount),0)      AS pendapatan_kotor,
+                    COALESCE(SUM(total_potongan),0)    AS potongan,
+                    COALESCE(SUM(refund_amount),0)     AS pengembalian,
+                    COALESCE(SUM(total_fee),0)         AS total_biaya,
+                    COALESCE(SUM(adjustment_amount),0) AS penyesuaian,
+                    COALESCE(SUM(net_amount),0)        AS dana_diterima
              FROM settlements
              WHERE {$w} AND settlement_date IS NOT NULL
              GROUP BY bulan, platform ORDER BY bulan DESC, platform",
             $a
         );
+        foreach ($rows as &$r) {
+            $r['selisih'] = (float) $r['dana_diterima'] - ((float) $r['pendapatan_kotor']
+                + (float) $r['potongan'] + (float) $r['pengembalian']
+                + (float) $r['total_biaya'] + (float) $r['penyesuaian']);
+        }
+        return $rows;
     }
 
     /**
@@ -314,6 +320,101 @@ final class Reports
              ORDER BY withdraw_date DESC",
             $a
         );
+    }
+
+    /**
+     * Laba bersih per produk.
+     *
+     * Settlement diberikan platform per PESANAN, bukan per produk. Karena itu
+     * nilai settlement dibagi ke tiap baris produk secara proporsional terhadap
+     * nilai kotor produk dalam pesanan tersebut:
+     *
+     *     porsi produk = subtotal produk sebelum diskon
+     *                    / subtotal seluruh produk pesanan sebelum diskon
+     *
+     * Angkanya alokasi, bukan angka resmi platform per produk - platform memang
+     * tidak menyediakannya. Totalnya tetap sama dengan total settlement pesanan
+     * yang ikut teralokasi.
+     *
+     * Hanya pesanan yang berkas pesanan DAN berkas penghasilannya sudah diunggah
+     * yang bisa dihitung; sisanya dilaporkan lewat productNetCoverage().
+     */
+    public static function productNet(?string $from, ?string $to, ?string $platform, int $limit = 100, string $sort = 'bersih'): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        $order = match ($sort) {
+            'kotor'  => 'kotor',
+            'qty'    => 'qty',
+            'marjin' => 'marjin',
+            default  => 'bersih',
+        };
+
+        return Db::all(
+            "SELECT i.platform,
+                    COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                    COUNT(DISTINCT i.order_id) AS pesanan,
+                    SUM(i.qty)                 AS qty,
+                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
+                    SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
+                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
+                    SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
+                    SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
+                    CASE WHEN SUM(st.gross_amount * i.subtotal_before_disc / o.items_subtotal_before) > 0
+                         THEN SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
+                              / SUM(st.gross_amount * i.subtotal_before_disc / o.items_subtotal_before) * 100
+                         ELSE NULL END AS marjin
+             FROM order_items i
+             JOIN orders o ON o.id = i.order_pk AND o.items_subtotal_before > 0
+             JOIN (
+                 SELECT platform, order_id,
+                        SUM(gross_amount)      AS gross_amount,
+                        SUM(total_potongan)    AS total_potongan,
+                        SUM(refund_amount)     AS refund_amount,
+                        SUM(total_fee)         AS total_fee,
+                        SUM(net_amount)        AS net_amount
+                 FROM settlements
+                 WHERE {$w}
+                 GROUP BY platform, order_id
+             ) st ON st.platform = i.platform AND st.order_id = i.order_id
+             GROUP BY i.platform, produk
+             ORDER BY {$order} DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /**
+     * Berapa bagian settlement yang berhasil dialokasikan ke produk.
+     * Sisanya = pesanan yang berkas pesanannya belum diunggah.
+     */
+    public static function productNetCoverage(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        $total = Db::one(
+            "SELECT COUNT(DISTINCT CONCAT(platform,'|',order_id)) AS pesanan,
+                    COALESCE(SUM(net_amount),0) AS bersih
+             FROM settlements WHERE {$w}",
+            $a
+        ) ?? ['pesanan' => 0, 'bersih' => 0];
+
+        $covered = Db::one(
+            "SELECT COUNT(*) AS pesanan, COALESCE(SUM(st.net_amount),0) AS bersih
+             FROM (
+                 SELECT platform, order_id, SUM(net_amount) AS net_amount
+                 FROM settlements WHERE {$w}
+                 GROUP BY platform, order_id
+             ) st
+             JOIN orders o ON o.platform = st.platform AND o.order_id = st.order_id
+                          AND o.items_subtotal_before > 0",
+            $a
+        ) ?? ['pesanan' => 0, 'bersih' => 0];
+
+        return [
+            'total_pesanan'   => (int) $total['pesanan'],
+            'total_bersih'    => (float) $total['bersih'],
+            'covered_pesanan' => (int) $covered['pesanan'],
+            'covered_bersih'  => (float) $covered['bersih'],
+        ];
     }
 
     // -----------------------------------------------------------------

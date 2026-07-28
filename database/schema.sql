@@ -209,6 +209,10 @@ CREATE TABLE IF NOT EXISTS settlements (
 
   gross_amount      DECIMAL(18,2) NOT NULL DEFAULT 0,
   discount_seller   DECIMAL(18,2) NOT NULL DEFAULT 0,
+  -- Jumlah seluruh komponen berkategori 'potongan' (diskon & voucher yang
+  -- ditanggung penjual). Disimpan agar laporan tidak perlu menjumlah ulang
+  -- tabel settlement_fees setiap kali.
+  total_potongan    DECIMAL(18,2) NOT NULL DEFAULT 0,
   refund_amount     DECIMAL(18,2) NOT NULL DEFAULT 0,
   buyer_payment     DECIMAL(18,2) NOT NULL DEFAULT 0,
   adjustment_amount DECIMAL(18,2) NOT NULL DEFAULT 0,
@@ -341,11 +345,13 @@ CREATE OR REPLACE VIEW v_daily_settlement AS
 SELECT
   s.platform,
   s.settlement_date,
-  COUNT(*)              AS total_trx,
-  SUM(s.gross_amount)   AS pendapatan_kotor,
-  SUM(s.refund_amount)  AS pengembalian,
-  SUM(s.total_fee)      AS total_biaya,
-  SUM(s.net_amount)     AS dana_diterima,
+  COUNT(*)               AS total_trx,
+  SUM(s.gross_amount)    AS pendapatan_kotor,
+  SUM(s.total_potongan)  AS potongan,
+  SUM(s.refund_amount)   AS pengembalian,
+  SUM(s.adjustment_amount) AS penyesuaian,
+  SUM(s.total_fee)       AS total_biaya,
+  SUM(s.net_amount)      AS dana_diterima,
   SUM(s.fee_komisi)     AS fee_komisi,
   SUM(s.fee_layanan)    AS fee_layanan,
   SUM(s.fee_administrasi) AS fee_administrasi,

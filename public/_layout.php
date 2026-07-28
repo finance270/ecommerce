@@ -106,6 +106,7 @@ function platformBadge(string $p): string
 /** Link ekspor CSV untuk laporan yang sedang dibuka. */
 function exportLink(string $report, array $params = []): string
 {
-    $q = array_merge(['report' => $report], array_intersect_key($_GET, array_flip(['from', 'to', 'platform', 'sort', 'q', 'status'])), $params);
+    $keep = ['from', 'to', 'platform', 'sort', 'psort', 'q', 'status'];
+    $q = array_merge(['report' => $report], array_intersect_key($_GET, array_flip($keep)), $params);
     return 'export.php?' . http_build_query($q);
 }

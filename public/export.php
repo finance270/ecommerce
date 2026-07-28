@@ -111,6 +111,33 @@ switch ($report) {
             ], $pnl['kategori'])
         );
 
+    case 'product_net':
+        $psort = q('psort', 'bersih');
+        $rows = Reports::productNet($from, $to, $platform, 5000, (string) $psort);
+        csvOut("laba_bersih_per_produk_{$stamp}.csv", [
+            'Platform', 'Produk', 'Pesanan', 'Qty', 'Pendapatan Kotor',
+            'Diskon & Voucher Penjual', 'Pengembalian Dana', 'Biaya Platform',
+            'Dana Diterima Bersih', 'Marjin %',
+        ], array_map(static fn($r) => [
+            $r['platform'], $r['produk'], $r['pesanan'], $r['qty'],
+            round((float) $r['kotor'], 2), round((float) $r['potongan'], 2),
+            round((float) $r['pengembalian'], 2), round((float) $r['biaya'], 2),
+            round((float) $r['bersih'], 2),
+            $r['marjin'] === null ? '' : round((float) $r['marjin'], 2),
+        ], $rows));
+
+    case 'monthly_settlement':
+        $rows = Reports::monthlySettlement($from, $to, $platform);
+        csvOut("rekap_bulanan_settlement_{$stamp}.csv", [
+            'Bulan', 'Platform', 'Transaksi', 'Pendapatan Kotor', 'Diskon & Voucher Penjual',
+            'Pengembalian Dana', 'Biaya Platform', 'Penyesuaian', 'Selisih Pencatatan',
+            'Dana Diterima Bersih',
+        ], array_map(static fn($r) => [
+            $r['bulan'], $r['platform'], $r['trx'], $r['pendapatan_kotor'], $r['potongan'],
+            $r['pengembalian'], $r['total_biaya'], $r['penyesuaian'],
+            round((float) $r['selisih'], 2), $r['dana_diterima'],
+        ], $rows));
+
     case 'products':
         $sort = q('sort', 'omzet') === 'qty' ? 'qty' : 'omzet';
         $rows = Reports::topProducts($from, $to, $platform, 5000, $sort);

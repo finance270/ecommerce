@@ -20,10 +20,26 @@ $detail  = Reports::feeDetail($from, $to, $platform);
 $bridge  = Reports::bridge($from, $to, $platform);
 $bulanan = Reports::monthlySettlement($from, $to, $platform);
 $tarik   = Reports::withdrawals($from, $to, $platform);
+$tot     = Reports::bridgeTotals($bridge);
 
-$kotor = (float) ($ring['pendapatan_kotor'] ?? 0);
-$biaya = (float) ($ring['total_biaya'] ?? 0);
-$bersih = (float) ($ring['dana_diterima'] ?? 0);
+$prodSort = q('psort', 'bersih');
+$produk   = Reports::productNet($from, $to, $platform, 100, (string) $prodSort);
+$cover    = Reports::productNetCoverage($from, $to, $platform);
+
+$kotor  = $tot['kotor'];
+$biaya  = $tot['biaya'];
+$bersih = $tot['bersih'];
+
+// Semua baris pengurang dari pendapatan kotor sampai dana diterima bersih.
+$langkah = [
+    ['Pendapatan kotor', $tot['kotor'], 'Nilai penjualan sebelum diskon apa pun', 'head'],
+    ['Diskon &amp; voucher ditanggung penjual', $tot['potongan'], 'Potongan harga yang Anda tanggung sendiri', ''],
+    ['Pengembalian dana ke pembeli', $tot['refund'], 'Refund atas pesanan yang dikembalikan', ''],
+    ['Biaya platform', $tot['biaya'], 'Komisi, layanan, administrasi, dan biaya lain', ''],
+    ['Penyesuaian', $tot['penyesuaian'], 'Kompensasi & koreksi dari platform', ''],
+    ['Selisih pencatatan', $tot['selisih'], 'Selisih arsip platform, ditampilkan apa adanya', ''],
+    ['Dana diterima bersih', $tot['bersih'], 'Yang benar-benar masuk ke saldo penjual', 'foot'],
+];
 
 // Kategori yang benar-benar biaya (nilai negatif = beban).
 $feeCats = array_values(array_filter(
@@ -49,19 +65,53 @@ render_head('Laba & Biaya', 'pnl');
     <div class="hint"><?= num($ring['trx'] ?? 0) ?> transaksi settlement</div>
   </div>
   <div class="kpi bad">
-    <div class="label">Total biaya platform</div>
-    <div class="value"><?= rp($biaya, true) ?></div>
-    <div class="hint"><?= pct(abs($biaya), $kotor) ?> dari pendapatan kotor</div>
-  </div>
-  <div class="kpi">
-    <div class="label">Pengembalian dana</div>
-    <div class="value"><?= rp($ring['pengembalian'] ?? 0, true) ?></div>
-    <div class="hint">refund ke pembeli</div>
+    <div class="label">Total seluruh pengurang</div>
+    <div class="value"><?= rp($kotor - $bersih === 0.0 ? 0 : -($kotor - $bersih), true) ?></div>
+    <div class="hint"><?= pct($kotor - $bersih, $kotor) ?> dari pendapatan kotor</div>
   </div>
   <div class="kpi ok">
     <div class="label">Dana diterima bersih</div>
     <div class="value"><?= rp($bersih, true) ?></div>
     <div class="hint">masuk ke saldo penjual</div>
+  </div>
+  <div class="kpi <?= $kotor > 0 && $bersih / max($kotor, 1) < 0.6 ? 'bad' : 'ok' ?>">
+    <div class="label">Marjin bersih</div>
+    <div class="value"><?= $kotor > 0 ? number_format($bersih / $kotor * 100, 1, ',', '.') . '%' : '-' ?></div>
+    <div class="hint">dana diterima &divide; pendapatan kotor</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Ringkasan: dari pendapatan kotor ke dana diterima bersih</h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:12px">
+    Seluruh pengurang ditampilkan berurutan sampai angka akhir, jadi tidak ada potongan yang
+    tersembunyi di dalam angka lain.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Komponen</th><th>Keterangan</th>
+        <th class="num">Jumlah</th><th class="num">% dari kotor</th><th style="width:130px"></th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($langkah as [$nama, $nilai, $ket, $jenis]):
+          if ($jenis === '' && (float) $nilai === 0.0) {
+              continue;   // pengurang yang nihil tidak perlu ditampilkan
+          } ?>
+        <tr<?= $jenis === 'foot' ? ' style="font-weight:700;background:#f7f9fc"' : '' ?>>
+          <td><?= $nama ?></td>
+          <td class="muted" style="font-weight:400"><?= $ket ?></td>
+          <td class="num <?= (float) $nilai < 0 ? 'neg' : ($jenis === 'foot' ? 'pos' : '') ?>"><?= rp($nilai) ?></td>
+          <td class="num muted" style="font-weight:400"><?= $kotor > 0 ? pct(abs((float) $nilai), $kotor) : '-' ?></td>
+          <td>
+            <?php if ($jenis !== 'head'): ?>
+              <div class="bar"><span style="width:<?= $kotor > 0 ? min(100, round(abs((float) $nilai) / $kotor * 100)) : 0 ?>%;background:<?= $jenis === 'foot' ? '#128a5b' : '#c0392b' ?>"></span></div>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
   </div>
 </div>
 
@@ -123,15 +173,18 @@ render_head('Laba & Biaya', 'pnl');
   </p>
 </div>
 
-<div class="grid2">
-  <div class="card">
+<div class="card">
     <h2>
-      Struktur biaya per kategori
+      Struktur biaya platform per kategori
       <a class="btn ghost sm" href="<?= e(exportLink('fee_category')) ?>">Ekspor CSV</a>
     </h2>
+    <p class="help" style="margin-top:-4px;margin-bottom:12px">
+      Rincian baris <b>Biaya platform</b> di atas. Diskon penjual dan pengembalian dana tidak masuk
+      ke sini karena keduanya pengurang pendapatan, bukan biaya yang ditagihkan platform.
+    </p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Kategori akuntansi</th><th class="num">Jumlah</th><th class="num">% pendapatan</th><th style="width:110px"></th></tr></thead>
+        <thead><tr><th>Kategori akuntansi</th><th class="num">Jumlah</th><th class="num">% pendapatan kotor</th><th class="num">% total biaya</th><th style="width:110px"></th></tr></thead>
         <tbody>
         <?php $maxF = $feeCats !== [] ? max(array_map(static fn($k) => abs((float) $k['total']), $feeCats)) : 0; ?>
         <?php foreach ($feeCats as $k):
@@ -140,16 +193,18 @@ render_head('Laba & Biaya', 'pnl');
             <td><?= e(Profiles::LABELS[$k['fee_category']] ?? $k['fee_category']) ?></td>
             <td class="num <?= $v < 0 ? 'neg' : 'pos' ?>"><?= rp($v) ?></td>
             <td class="num muted"><?= pct(abs($v), $kotor) ?></td>
+            <td class="num muted"><?= pct(abs($v), abs($totalFeeCat)) ?></td>
             <td><div class="bar"><span style="width:<?= $maxF > 0 ? round(abs($v) / $maxF * 100) : 0 ?>%;background:<?= $v < 0 ? '#c0392b' : '#128a5b' ?>"></span></div></td>
           </tr>
         <?php endforeach; ?>
-        <?php if ($feeCats === []): ?><tr><td colspan="4" class="muted">Belum ada data settlement pada rentang ini.</td></tr><?php endif; ?>
+        <?php if ($feeCats === []): ?><tr><td colspan="5" class="muted">Belum ada data settlement pada rentang ini.</td></tr><?php endif; ?>
         </tbody>
         <?php if ($feeCats !== []): ?>
         <tfoot><tr>
-          <td>Total biaya (dari rincian)</td>
+          <td>Total biaya platform</td>
           <td class="num neg"><?= rp($totalFeeCat) ?></td>
-          <td class="num"><?= pct(abs($totalFeeCat), $kotor) ?></td><td></td>
+          <td class="num"><?= pct(abs($totalFeeCat), $kotor) ?></td>
+          <td class="num">100%</td><td></td>
         </tr></tfoot>
         <?php endif; ?>
       </table>
@@ -158,30 +213,138 @@ render_head('Laba & Biaya', 'pnl');
       Nilai negatif = beban yang memotong penghasilan. Nilai positif = subsidi/penggantian dari platform.
       Kolom yang sifatnya subtotal (mis. kolom <i>Ongkir</i> milik Tokopedia yang merupakan jumlah dari
       baris-baris ongkir di bawahnya) sudah dikeluarkan agar tidak terhitung dua kali, sehingga total
-      di tabel ini sama dengan kolom <i>Biaya platform</i> pada jembatan di atas.
+      di tabel ini sama dengan baris <i>Biaya platform</i> pada ringkasan di atas.
     </p>
-  </div>
+</div>
 
-  <div class="card">
-    <h2>Rekap per bulan</h2>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Bulan</th><th>Platform</th><th class="num">Kotor</th><th class="num">Biaya</th><th class="num">Bersih</th><th class="num">% biaya</th></tr></thead>
-        <tbody>
-        <?php foreach ($bulanan as $b): ?>
-          <tr>
-            <td class="nowrap"><?= e($b['bulan']) ?></td>
-            <td><?= platformBadge((string) $b['platform']) ?></td>
-            <td class="num"><?= rp($b['pendapatan_kotor']) ?></td>
-            <td class="num neg"><?= rp($b['total_biaya']) ?></td>
-            <td class="num pos"><?= rp($b['dana_diterima']) ?></td>
-            <td class="num muted"><?= pct(abs((float) $b['total_biaya']), (float) $b['pendapatan_kotor']) ?></td>
-          </tr>
-        <?php endforeach; ?>
-        <?php if ($bulanan === []): ?><tr><td colspan="6" class="muted">Belum ada data.</td></tr><?php endif; ?>
-        </tbody>
-      </table>
+<div class="card">
+  <h2>
+    Rekap per bulan
+    <a class="btn ghost sm" href="<?= e(exportLink('monthly_settlement')) ?>">Ekspor CSV</a>
+  </h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Bulan</th><th>Platform</th><th class="num">Pendapatan kotor</th>
+        <th class="num">Diskon &amp; voucher</th><th class="num">Pengembalian</th>
+        <th class="num">Biaya platform</th><th class="num">Penyesuaian</th><th class="num">Selisih</th>
+        <th class="num">Dana diterima bersih</th><th class="num">Marjin</th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($bulanan as $b):
+          $bk = (float) $b['pendapatan_kotor'];
+          $bb = (float) $b['dana_diterima']; ?>
+        <tr>
+          <td class="nowrap"><?= e($b['bulan']) ?></td>
+          <td><?= platformBadge((string) $b['platform']) ?></td>
+          <td class="num"><?= rp($bk) ?></td>
+          <td class="num <?= (float) $b['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['potongan']) ?></td>
+          <td class="num <?= (float) $b['pengembalian'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['pengembalian']) ?></td>
+          <td class="num neg"><?= rp($b['total_biaya']) ?></td>
+          <td class="num <?= abs((float) $b['penyesuaian']) > 0 ? '' : 'muted' ?>"><?= rp($b['penyesuaian']) ?></td>
+          <td class="num <?= abs((float) $b['selisih']) > 0 ? 'warn' : 'muted' ?>"><?= rp($b['selisih']) ?></td>
+          <td class="num pos"><b><?= rp($bb) ?></b></td>
+          <td class="num muted"><?= $bk > 0 ? number_format($bb / $bk * 100, 1, ',', '.') . '%' : '-' ?></td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if ($bulanan === []): ?><tr><td colspan="10" class="muted">Belum ada data.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>
+    Laba bersih per produk
+    <a class="btn ghost sm" href="<?= e(exportLink('product_net', ['psort' => $prodSort])) ?>">Ekspor CSV</a>
+  </h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:12px">
+    Platform memberi angka settlement <b>per pesanan</b>, bukan per produk. Karena itu nilai
+    settlement dibagi ke tiap produk sesuai porsinya dalam pesanan
+    (nilai produk sebelum diskon &divide; total nilai pesanan sebelum diskon).
+    Jadi angka di bawah adalah <b>alokasi</b>, bukan angka resmi platform per produk &mdash; tapi
+    totalnya tetap sama dengan total settlement pesanan yang ikut terhitung.
+  </p>
+
+  <?php
+  $cov = $cover['total_bersih'] != 0.0 ? $cover['covered_bersih'] / $cover['total_bersih'] * 100 : 0;
+  if ($cover['covered_pesanan'] < $cover['total_pesanan']): ?>
+    <div class="alert warn" style="margin-bottom:14px">
+      Baru <b><?= number_format($cov, 1, ',', '.') ?>%</b> dari dana bersih yang bisa dipecah ke produk
+      (<?= num($cover['covered_pesanan']) ?> dari <?= num($cover['total_pesanan']) ?> pesanan).
+      Sisanya settlement yang <b>berkas pesanannya belum diunggah</b>, sehingga isi produknya belum diketahui.
+      Unggah berkas <i>Semua Pesanan</i> / <i>Order</i> untuk periode terkait agar analisis ini lengkap.
     </div>
+  <?php endif; ?>
+
+  <form method="get" class="filters" style="margin-bottom:14px">
+    <?php foreach (['from' => $from, 'to' => $to, 'platform' => $platform] as $k => $v): ?>
+      <?php if ($v !== null): ?><input type="hidden" name="<?= e($k) ?>" value="<?= e($v) ?>"><?php endif; ?>
+    <?php endforeach; ?>
+    <div class="field">
+      <label>Urutkan produk</label>
+      <select name="psort" onchange="this.form.submit()">
+        <option value="bersih" <?= $prodSort === 'bersih' ? 'selected' : '' ?>>Bersih tertinggi</option>
+        <option value="kotor"  <?= $prodSort === 'kotor'  ? 'selected' : '' ?>>Kotor tertinggi</option>
+        <option value="qty"    <?= $prodSort === 'qty'    ? 'selected' : '' ?>>Terjual terbanyak</option>
+        <option value="marjin" <?= $prodSort === 'marjin' ? 'selected' : '' ?>>Marjin terbaik</option>
+      </select>
+    </div>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>#</th><th>Produk</th><th>Platform</th>
+        <th class="num">Pesanan</th><th class="num">Qty</th>
+        <th class="num">Kotor</th><th class="num">Diskon &amp; voucher</th>
+        <th class="num">Pengembalian</th><th class="num">Biaya platform</th>
+        <th class="num">Bersih</th><th class="num">Marjin</th>
+      </tr></thead>
+      <tbody>
+      <?php
+      $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'pengembalian' => 0.0, 'biaya' => 0.0, 'bersih' => 0.0, 'qty' => 0.0];
+      foreach ($produk as $i => $p):
+          foreach ($pt as $k => $_) {
+              $pt[$k] += (float) $p[$k];
+          }
+          $m = $p['marjin'] === null ? null : (float) $p['marjin']; ?>
+        <tr>
+          <td class="muted"><?= $i + 1 ?></td>
+          <td class="trunc" title="<?= e($p['produk']) ?>"><?= e($p['produk']) ?></td>
+          <td><?= platformBadge((string) $p['platform']) ?></td>
+          <td class="num"><?= num($p['pesanan']) ?></td>
+          <td class="num"><?= num($p['qty']) ?></td>
+          <td class="num"><?= rp($p['kotor']) ?></td>
+          <td class="num <?= (float) $p['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['potongan']) ?></td>
+          <td class="num <?= (float) $p['pengembalian'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['pengembalian']) ?></td>
+          <td class="num neg"><?= rp($p['biaya']) ?></td>
+          <td class="num pos"><b><?= rp($p['bersih']) ?></b></td>
+          <td class="num <?= $m === null ? 'muted' : ($m < 50 ? 'neg' : '') ?>">
+            <?= $m === null ? '-' : number_format($m, 1, ',', '.') . '%' ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if ($produk === []): ?>
+        <tr><td colspan="11" class="muted">
+          Belum bisa dihitung. Perlu berkas pesanan <i>dan</i> berkas laporan penghasilan
+          untuk periode yang sama.
+        </td></tr>
+      <?php endif; ?>
+      </tbody>
+      <?php if ($produk !== []): ?>
+      <tfoot><tr>
+        <td colspan="4">Total <?= count($produk) ?> produk teratas</td>
+        <td class="num"><?= num($pt['qty']) ?></td>
+        <td class="num"><?= rp($pt['kotor']) ?></td>
+        <td class="num neg"><?= rp($pt['potongan']) ?></td>
+        <td class="num neg"><?= rp($pt['pengembalian']) ?></td>
+        <td class="num neg"><?= rp($pt['biaya']) ?></td>
+        <td class="num pos"><?= rp($pt['bersih']) ?></td>
+        <td class="num"><?= $pt['kotor'] > 0 ? number_format($pt['bersih'] / $pt['kotor'] * 100, 1, ',', '.') . '%' : '-' ?></td>
+      </tr></tfoot>
+      <?php endif; ?>
+    </table>
   </div>
 </div>
 
