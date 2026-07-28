@@ -69,29 +69,51 @@ render_head('Laba & Biaya', 'pnl');
   <h2>Jembatan angka: dari pendapatan kotor ke dana yang diterima</h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
     Setiap baris diambil dari kolom resmi berkas ekspor, sehingga angkanya bisa dicocokkan langsung
-    dengan laporan platform saat audit.
+    dengan laporan platform saat audit. <b>Pendapatan kotor</b> adalah nilai penjualan sebelum diskon
+    apa pun &mdash; <i>Subtotal sebelum diskon</i> untuk Tokopedia dan <i>Harga Asli Produk</i> untuk
+    Shopee &mdash; supaya kedua platform setara dan diskon yang Anda tanggung terlihat jelas.
   </p>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>Platform</th><th class="num">Pendapatan kotor</th><th class="num">Potongan pendapatan</th>
+        <th>Platform</th><th class="num">Pendapatan kotor</th>
+        <th class="num">Diskon &amp; voucher penjual</th><th class="num">Pengembalian dana</th>
         <th class="num">Biaya platform</th><th class="num">Penyesuaian</th>
         <th class="num">Selisih pencatatan</th><th class="num">Dana diterima bersih</th>
       </tr></thead>
       <tbody>
-      <?php foreach ($bridge as $b): ?>
+      <?php
+      $tb = ['kotor' => 0.0, 'potongan' => 0.0, 'refund' => 0.0, 'biaya' => 0.0,
+             'penyesuaian' => 0.0, 'selisih' => 0.0, 'bersih' => 0.0];
+      foreach ($bridge as $b):
+          foreach ($tb as $k => $_) {
+              $tb[$k] += (float) $b[$k];
+          } ?>
         <tr>
           <td><?= platformBadge((string) $b['platform']) ?></td>
           <td class="num"><?= rp($b['kotor']) ?></td>
           <td class="num <?= $b['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['potongan']) ?></td>
+          <td class="num <?= $b['refund'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['refund']) ?></td>
           <td class="num neg"><?= rp($b['biaya']) ?></td>
           <td class="num <?= abs($b['penyesuaian']) > 0 ? '' : 'muted' ?>"><?= rp($b['penyesuaian']) ?></td>
           <td class="num <?= abs($b['selisih']) > 0 ? 'warn' : 'muted' ?>"><?= rp($b['selisih']) ?></td>
           <td class="num pos"><b><?= rp($b['bersih']) ?></b></td>
         </tr>
       <?php endforeach; ?>
-      <?php if ($bridge === []): ?><tr><td colspan="7" class="muted">Belum ada data settlement pada rentang ini.</td></tr><?php endif; ?>
+      <?php if ($bridge === []): ?><tr><td colspan="8" class="muted">Belum ada data settlement pada rentang ini.</td></tr><?php endif; ?>
       </tbody>
+      <?php if (count($bridge) > 1): ?>
+      <tfoot><tr>
+        <td>Gabungan</td>
+        <td class="num"><?= rp($tb['kotor']) ?></td>
+        <td class="num neg"><?= rp($tb['potongan']) ?></td>
+        <td class="num neg"><?= rp($tb['refund']) ?></td>
+        <td class="num neg"><?= rp($tb['biaya']) ?></td>
+        <td class="num"><?= rp($tb['penyesuaian']) ?></td>
+        <td class="num"><?= rp($tb['selisih']) ?></td>
+        <td class="num pos"><?= rp($tb['bersih']) ?></td>
+      </tr></tfoot>
+      <?php endif; ?>
     </table>
   </div>
   <p class="help" style="margin-top:10px">

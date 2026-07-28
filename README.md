@@ -136,6 +136,41 @@ akan **0**.
 
 Semua laporan bisa diekspor ke **CSV** (UTF-8 + pemisah `;`, langsung rapi di Excel Indonesia).
 
+### Apa itu "pendapatan kotor"
+
+Supaya Tokopedia dan Shopee bisa dibandingkan setara, **pendapatan kotor** selalu memakai nilai
+penjualan **sebelum diskon apa pun**:
+
+| Platform | Kolom yang dipakai |
+| --- | --- |
+| Tokopedia | `Subtotal sebelum diskon` |
+| Shopee | `Harga Asli Produk` |
+
+Kolom `Total Pendapatan` milik Tokopedia **tidak** dipakai sebagai angka kotor, karena kolom itu
+sudah dikurangi diskon penjual dan pengembalian dana. Terbukti dari data:
+
+```
+Subtotal sebelum diskon                              901.139.200
+Diskon penjual                                      -130.880.352
+Subtotal pengembalian dana setelah diskon penjual     -28.803.999
+= Total Pendapatan                                   741.454.849
+```
+
+Dengan memakai `Subtotal sebelum diskon`, diskon yang Anda tanggung tampil sebagai baris
+tersendiri di halaman **Laba & Biaya**, bukan tersembunyi di dalam angka kotor.
+
+Hal yang sama berlaku untuk Shopee: diskon produk dan voucher yang disponsori penjual
+dikelompokkan sebagai **potongan pendapatan** (mengikuti pengelompokan Shopee sendiri pada
+bagian *1. Total Pendapatan*), bukan sebagai biaya platform. Karena itu angka **Biaya platform**
+yang tampil sama persis dengan *2. Total Pengeluaran* pada laporan Shopee.
+
+Jembatan angkanya selalu berimbang:
+
+```
+pendapatan kotor + potongan + pengembalian dana + biaya platform
++ penyesuaian + selisih pencatatan = dana diterima bersih
+```
+
 ### Dua sudut pandang tanggal
 
 Ini penting agar angka tidak salah tafsir:
@@ -196,11 +231,20 @@ persis (sampai rupiah) dengan angka pada sheet ringkasan bawaan berkas ekspor �
 milik Tokopedia dan `Summary` milik Shopee.
 
 **Kolom subtotal dikecualikan agar tidak dobel hitung.** Beberapa kolom pada berkas platform
-sebenarnya adalah subtotal dari kolom lain, misalnya kolom `Ongkir` milik Tokopedia yang
-nilainya persis sama dengan jumlah seluruh baris ongkir di bawahnya, serta
-`Biaya komisi sebelum diskon` yang merupakan rincian pembentuk `Biaya komisi platform`.
-Kolom seperti ini diberi kategori `rincian` sehingga tetap tersimpan untuk penelusuran, tapi
-tidak ikut dijumlahkan sebagai biaya.
+sebenarnya adalah subtotal atau pecahan dari kolom lain. Kolom seperti ini diberi kategori
+`rincian` (atau `informasi`) sehingga tetap tersimpan untuk penelusuran, tapi tidak ikut
+dijumlahkan sebagai biaya:
+
+- `Ongkir` (Tokopedia) — nilainya persis sama dengan jumlah seluruh baris ongkir di bawahnya;
+- `Biaya komisi sebelum diskon` — rincian pembentuk `Biaya komisi platform`;
+- `Subtotal setelah diskon penjual` = `Subtotal sebelum diskon` + `Diskon penjual`;
+- `Subtotal pengembalian dana sebelum diskon penjual` + `Pengembalian dana diskon penjual`
+  = versi `setelah diskon` yang dipakai;
+- blok rincian pembayaran pembeli (Tokopedia) dan rincian pengembalian barang (Shopee) —
+  keterangan, bukan bagian perhitungan settlement penjual.
+
+Hasilnya, jumlah seluruh kategori biaya **sama persis** dengan kolom total biaya resmi
+platform untuk kedua platform.
 
 **Format angka & tanggal** ditangani otomatis: rupiah gaya Shopee (`75.000`), rupiah polos
 gaya Tokopedia (`-63750`), berat `500 gr` maupun kolom `Weight(kg)`, serta tanggal

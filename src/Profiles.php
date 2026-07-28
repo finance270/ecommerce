@@ -19,8 +19,15 @@ final class Profiles
         'promosi', 'lainnya',
     ];
 
-    /** Kategori non-biaya (tidak masuk fee_*). 'rincian' = pecahan dari kolom lain. */
-    public const NON_FEE_CATEGORIES = ['total', 'pendapatan', 'refund', 'penyesuaian', 'rincian'];
+    /**
+     * Kategori non-biaya (tidak masuk fee_*).
+     *   total     = kolom total bawaan platform
+     *   potongan  = pengurang pendapatan (diskon & voucher yang ditanggung penjual)
+     *   refund    = pengembalian dana
+     *   rincian   = pecahan dari kolom lain, jangan dijumlah lagi
+     *   informasi = kolom keterangan (mis. rincian pembayaran pembeli)
+     */
+    public const NON_FEE_CATEGORIES = ['total', 'potongan', 'refund', 'penyesuaian', 'rincian', 'informasi'];
 
     public const LABELS = [
         'komisi'       => 'Biaya komisi',
@@ -35,13 +42,14 @@ final class Profiles
         'pajak'        => 'Pajak & bea',
         'asuransi'     => 'Asuransi',
         'fulfillment'  => 'Biaya fulfillment',
-        'promosi'      => 'Voucher & cashback ditanggung penjual',
+        'promosi'      => 'Biaya program promo & cashback',
         'lainnya'      => 'Biaya lainnya',
         'total'        => 'Kolom total',
-        'pendapatan'   => 'Komponen pendapatan',
+        'potongan'     => 'Potongan pendapatan (diskon & voucher penjual)',
         'refund'       => 'Pengembalian dana',
         'penyesuaian'  => 'Penyesuaian',
-        'rincian'      => 'Rincian (bagian dari biaya lain)',
+        'rincian'      => 'Rincian (bagian dari kolom lain)',
+        'informasi'    => 'Keterangan (tidak dijumlah)',
     ];
 
     // =================================================================
@@ -253,13 +261,20 @@ final class Profiles
                 'waktu pembayaran pesanan'       => ['settlement_time', 'datetime'],
                 'mata uang'                      => ['currency', 'text'],
                 'jumlah penyelesaian pembayaran' => ['net_amount', 'money'],
-                'total pendapatan'               => ['gross_amount', 'money'],
+                // Pendapatan kotor memakai "Subtotal sebelum diskon", BUKAN
+                // "Total Pendapatan". Kolom "Total Pendapatan" milik Tokopedia
+                // sudah dikurangi diskon penjual dan pengembalian dana, terbukti:
+                //   subtotal sebelum diskon + diskon penjual
+                //   + subtotal pengembalian dana setelah diskon = total pendapatan
+                // Dengan memakai subtotal sebelum diskon, angka "kotor" Tokopedia
+                // setara dengan "Harga Asli Produk" milik Shopee.
+                'subtotal sebelum diskon'        => ['gross_amount', 'money'],
                 'total biaya'                    => ['total_fee', 'money'],
                 'diskon penjual'                 => ['discount_seller', 'money'],
                 'jumlah penyesuaian'             => ['adjustment_amount', 'money'],
                 'id pesanan terkait'             => ['related_order_id', 'text'],
                 'pembayaran oleh pembeli'        => ['buyer_payment', 'money'],
-                'pengembalian dana pembeli'      => ['refund_amount', 'money'],
+                'subtotal pengembalian dana setelah diskon penjual' => ['refund_amount', 'money'],
                 'sumber pesanan'                 => ['source_channel', 'text'],
                 'perkiraan berat paket'          => ['weight_gram', 'gram'],
             ];
@@ -348,26 +363,36 @@ final class Profiles
         $map = [
             // ---- Tokopedia: kolom total & pendapatan -------------------
             'jumlah penyelesaian pembayaran' => 'total',
-            'total pendapatan'               => 'total',
             'total biaya'                    => 'total',
             'total penghasilan'              => 'total',
-            'subtotal setelah diskon penjual'                          => 'pendapatan',
-            'subtotal sebelum diskon'                                  => 'pendapatan',
-            'diskon penjual'                                           => 'pendapatan',
-            'pembayaran oleh pembeli'                                  => 'pendapatan',
-            'diskon voucher yang ditanggung penjual'                   => 'pendapatan',
-            'diskon platform'                                          => 'pendapatan',
-            'diskon voucher yang ditanggung platform'                  => 'pendapatan',
-            'diskon ongkir dari penjual'                               => 'pendapatan',
-            'jumlah penyesuaian'                                       => 'penyesuaian',
-            // pengembalian
-            'subtotal pengembalian dana setelah diskon penjual'        => 'refund',
-            'subtotal pengembalian dana sebelum diskon penjual'        => 'refund',
-            'pengembalian dana diskon penjual'                         => 'refund',
-            'pengembalian dana pembeli'                                => 'refund',
-            'pengembalian dana diskon voucher yang ditanggung penjual' => 'refund',
-            'pengembalian dana diskon platform'                        => 'refund',
-            'pengembalian dana diskon voucher yang ditanggung platform' => 'refund',
+            // "Subtotal sebelum diskon" dipakai sebagai pendapatan kotor, dan
+            // "Total Pendapatan" adalah hasil akhir setelah diskon+pengembalian.
+            // Keduanya kolom total, bukan komponen yang boleh dijumlah lagi.
+            'subtotal sebelum diskon'        => 'total',
+            'total pendapatan'               => 'total',
+            // Subtotal setelah diskon = sebelum diskon + diskon penjual.
+            'subtotal setelah diskon penjual' => 'rincian',
+            'diskon penjual'                  => 'potongan',
+            'jumlah penyesuaian'              => 'penyesuaian',
+
+            // Pengembalian dana: hanya versi "setelah diskon" yang dipakai.
+            // Versi "sebelum diskon" + "pengembalian dana diskon penjual"
+            // adalah pecahannya, jadi ditandai rincian agar tidak dobel.
+            'subtotal pengembalian dana setelah diskon penjual' => 'refund',
+            'subtotal pengembalian dana sebelum diskon penjual' => 'rincian',
+            'pengembalian dana diskon penjual'                  => 'rincian',
+
+            // Blok rincian pembayaran pembeli: keterangan cara pembeli membayar,
+            // bukan bagian dari perhitungan settlement penjual.
+            'pembayaran oleh pembeli'                                  => 'informasi',
+            'pengembalian dana pembeli'                                => 'informasi',
+            'diskon voucher yang ditanggung penjual'                   => 'informasi',
+            'diskon platform'                                          => 'informasi',
+            'diskon voucher yang ditanggung platform'                  => 'informasi',
+            'diskon ongkir dari penjual'                               => 'informasi',
+            'pengembalian dana diskon voucher yang ditanggung penjual' => 'informasi',
+            'pengembalian dana diskon platform'                        => 'informasi',
+            'pengembalian dana diskon voucher yang ditanggung platform' => 'informasi',
             // biaya
             'biaya komisi platform'          => 'komisi',
             'komisi dinamis'                 => 'komisi',
@@ -416,45 +441,35 @@ final class Profiles
             'biaya isi saldo otomatis (dari penghasilan)' => 'lainnya',
 
             // ---- Shopee ------------------------------------------------
-            'harga asli produk'   => 'pendapatan',
-            'total diskon produk' => 'pendapatan',
-            'kompensasi'          => 'pendapatan',
-            'jumlah pengembalian dana ke pembeli' => 'refund',
-            'pengembalian dana ke pembeli'        => 'refund',
-            'pro-rata koin yang ditukarkan untuk pengembalian barang' => 'refund',
-            'pro-rata voucher shopee untuk pengembalian barang'       => 'refund',
+            // "Harga Asli Produk" adalah harga sebelum diskon apa pun.
+            'harga asli produk'   => 'total',
+            'kompensasi'          => 'lainnya',
+            // Sesuai pengelompokan Shopee sendiri, diskon produk dan voucher yang
+            // ditanggung penjual masuk bagian PENDAPATAN (pengurang), bukan
+            // "2. Total Pengeluaran". Dengan begini biaya platform yang tampil
+            // sama persis dengan Total Pengeluaran pada laporan Shopee.
+            'total diskon produk'                      => 'potongan',
+            'diskon produk dari shopee'                => 'potongan',
+            'voucher disponsor oleh penjual'           => 'potongan',
+            'voucher co-fund disponsor oleh penjual'   => 'potongan',
+            'cashback koin disponsori penjual'         => 'potongan',
+            'cashback koin co-fund disponsori penjual' => 'potongan',
+            'jumlah pengembalian dana ke pembeli'      => 'refund',
+            // Blok rincian pengembalian barang di kolom paling kanan: pecahan
+            // dari pengembalian di atas, tidak masuk ringkasan resmi Shopee.
+            'pengembalian dana ke pembeli'                           => 'rincian',
+            'pro-rata koin yang ditukarkan untuk pengembalian barang' => 'rincian',
+            'pro-rata voucher shopee untuk pengembalian barang'       => 'rincian',
             'biaya komisi ams'                      => 'komisi',
             'biaya administrasi (termasuk ppn 11%)' => 'administrasi',
             'biaya layanan'                         => 'layanan',
-            'diskon produk dari shopee'             => 'promosi',
-            'voucher disponsor oleh penjual'        => 'promosi',
-            'voucher co-fund disponsor oleh penjual' => 'promosi',
-            'cashback koin disponsori penjual'      => 'promosi',
-            'cashback koin co-fund disponsori penjual' => 'promosi',
         ];
 
         // Kolom "Pro-rated ..." versi Inggris dari Shopee.
-        $map['pro-rated bank payment channel promotion for return refund items']   = 'refund';
-        $map['pro-rated shopee payment channel promotion for return refund items'] = 'refund';
+        $map['pro-rated bank payment channel promotion for return refund items']   = 'rincian';
+        $map['pro-rated shopee payment channel promotion for return refund items'] = 'rincian';
 
         return $map;
-    }
-
-    /**
-     * Kolom yang memotong pendapatan kotor tetapi BUKAN biaya platform.
-     * Dipakai menyusun jembatan angka: kotor - potongan - biaya = bersih.
-     *
-     * Tokopedia kosong karena kolom "Total Pendapatan" miliknya sudah bersih
-     * dari diskon, sehingga kotor + biaya + penyesuaian = dana diterima.
-     *
-     * @return string[] daftar fee_code
-     */
-    public static function revenueDeductionCodes(string $platform): array
-    {
-        return match ($platform) {
-            'shopee' => ['total_diskon_produk'],
-            default  => [],
-        };
     }
 
     // =================================================================

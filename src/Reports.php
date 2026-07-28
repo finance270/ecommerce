@@ -141,10 +141,13 @@ final class Reports
         ) ?? [];
 
         [$w2, $a2] = self::filter('settlement_date', $from, $to, $platform);
+        // 'total', 'rincian', dan 'informasi' sengaja tidak ikut: isinya kolom
+        // total bawaan platform, pecahan kolom lain, dan kolom keterangan.
+        // Kalau ikut dijumlah, angkanya dobel dan menyesatkan.
         $byCat = Db::all(
             "SELECT fee_category, SUM(amount) AS total, COUNT(*) AS baris
              FROM settlement_fees
-             WHERE {$w2} AND fee_category NOT IN ('rincian')
+             WHERE {$w2} AND fee_category NOT IN ('rincian','total','informasi')
              GROUP BY fee_category ORDER BY total ASC",
             $a2
         );
@@ -154,12 +157,17 @@ final class Reports
 
     /**
      * Jembatan angka per platform, selalu berimbang:
-     *   pendapatan kotor - potongan pendapatan - biaya platform
+     *   pendapatan kotor + potongan + pengembalian + biaya platform
      *   + penyesuaian + selisih pencatatan = dana diterima bersih
+     *
+     * Pendapatan kotor memakai kolom paling kotor yang tersedia
+     * ("Subtotal sebelum diskon" untuk Tokopedia, "Harga Asli Produk" untuk
+     * Shopee), sehingga diskon penjual tampil sebagai baris tersendiri dan
+     * kedua platform bisa dibandingkan setara.
      *
      * "Dana diterima bersih" diambil dari kolom resmi platform, sehingga baris
      * selisih memperlihatkan secara jujur bila laporan platform sendiri tidak
-     * bulat (pada berkas contoh, Shopee selisih ~Rp 512 ribu).
+     * bulat.
      */
     public static function bridge(?string $from, ?string $to, ?string $platform): array
     {
@@ -174,25 +182,32 @@ final class Reports
             $a
         );
 
+        // Potongan & pengembalian diambil per kategori, bukan daftar kolom
+        // tetap, supaya kolom baru dari platform ikut terhitung otomatis.
+        [$w2, $a2] = self::filter('settlement_date', $from, $to, $platform);
+        $extra = [];
+        foreach (Db::all(
+            "SELECT platform, fee_category, COALESCE(SUM(amount),0) AS total
+             FROM settlement_fees
+             WHERE {$w2} AND fee_category IN ('potongan','refund')
+             GROUP BY platform, fee_category",
+            $a2
+        ) as $r) {
+            $extra[$r['platform']][$r['fee_category']] = (float) $r['total'];
+        }
+
         $out = [];
         foreach ($rows as $r) {
-            $codes = Profiles::revenueDeductionCodes((string) $r['platform']);
-            $potongan = 0.0;
-            if ($codes !== []) {
-                [$w2, $a2] = self::filter('settlement_date', $from, $to, (string) $r['platform']);
-                $ph = implode(',', array_fill(0, count($codes), '?'));
-                $potongan = (float) Db::val(
-                    "SELECT COALESCE(SUM(amount),0) FROM settlement_fees
-                     WHERE {$w2} AND fee_code IN ({$ph})",
-                    array_merge($a2, $codes),
-                    0
-                );
-            }
-            $subtotal = (float) $r['kotor'] + $potongan + (float) $r['biaya'] + (float) $r['penyesuaian'];
+            $p = (string) $r['platform'];
+            $potongan = $extra[$p]['potongan'] ?? 0.0;
+            $refund   = $extra[$p]['refund'] ?? 0.0;
+            $subtotal = (float) $r['kotor'] + $potongan + $refund
+                + (float) $r['biaya'] + (float) $r['penyesuaian'];
             $out[] = [
-                'platform'    => $r['platform'],
+                'platform'    => $p,
                 'kotor'       => (float) $r['kotor'],
                 'potongan'    => $potongan,
+                'refund'      => $refund,
                 'biaya'       => (float) $r['biaya'],
                 'penyesuaian' => (float) $r['penyesuaian'],
                 'selisih'     => (float) $r['bersih'] - $subtotal,
