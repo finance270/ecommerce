@@ -27,7 +27,7 @@ function render_head(string $title, string $active = ''): void
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= e($title) ?> &middot; <?= $app ?></title>
-<link rel="stylesheet" href="assets/app.css?v=3">
+<link rel="stylesheet" href="<?= e(assetUrl('assets/app.css')) ?>">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#128200;</text></svg>">
 </head>
 <body>
@@ -54,7 +54,7 @@ function render_foot(): void
 {
     ?>
 </main>
-<script src="assets/app.js?v=3"></script>
+<script src="<?= e(assetUrl('assets/app.js')) ?>"></script>
 </body>
 </html><?php
 }

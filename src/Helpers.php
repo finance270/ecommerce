@@ -6,6 +6,20 @@ function e(mixed $v): string
     return htmlspecialchars((string) ($v ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+/**
+ * URL berkas aset dengan penanda versi dari waktu ubah berkasnya.
+ *
+ * Dipakai supaya browser otomatis mengambil ulang CSS/JS setiap kali
+ * aplikasi diperbarui. Penanda versi manual pernah membuat pengguna
+ * memakai berkas lama dari cache setelah aplikasi di-update.
+ */
+function assetUrl(string $file): string
+{
+    $path = dirname(__DIR__) . '/public/' . ltrim($file, '/');
+    $ver = is_file($path) ? (string) filemtime($path) : '0';
+    return $file . '?v=' . $ver;
+}
+
 /** Format rupiah, mis. 1234567 => "1.234.567" */
 function rp(mixed $v, bool $withPrefix = false): string
 {

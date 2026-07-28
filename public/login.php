@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Masuk &middot; <?= e(Config::get('app_name')) ?></title>
-<link rel="stylesheet" href="assets/app.css?v=3">
+<link rel="stylesheet" href="<?= e(assetUrl('assets/app.css')) ?>">
 </head>
 <body>
 <div class="login-wrap">

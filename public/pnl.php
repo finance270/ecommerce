@@ -274,7 +274,7 @@ render_head('Laba & Biaya', 'pnl');
     totalnya tetap sama dengan total settlement pesanan yang ikut terhitung.
   </p>
   <div data-lazy="<?= e($lazyProduk) ?>">
-    <p class="muted">Menghitung alokasi per produk&hellip;</p>
+    <p class="loading">Menghitung alokasi per produk&hellip; pada data besar ini bisa memakan waktu.</p>
     <noscript><a href="<?= e($lazyProduk) ?>">Buka tabel laba bersih per produk</a></noscript>
   </div>
 </div>
@@ -289,7 +289,7 @@ render_head('Laba & Biaya', 'pnl');
     ke laporan asli saat audit.
   </p>
   <div data-lazy="<?= e($lazyBiaya) ?>">
-    <p class="muted">Memuat rincian komponen biaya&hellip;</p>
+    <p class="loading">Memuat rincian komponen biaya&hellip;</p>
     <noscript><a href="<?= e($lazyBiaya) ?>">Buka rincian komponen biaya</a></noscript>
   </div>
 </div>

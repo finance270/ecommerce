@@ -199,6 +199,16 @@ input:focus, select:focus { outline: 2px solid rgba(31, 111, 235, .25); border-c
 .login-wrap .field { margin-bottom: 14px; }
 .login-wrap input { width: 100%; }
 
+/* Penanda bagian yang sedang dihitung di latar belakang. */
+.loading { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 10px; }
+.loading::before {
+  content: ""; width: 15px; height: 15px; flex: none;
+  border: 2px solid #d6dfeb; border-top-color: var(--brand);
+  border-radius: 50%; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading::before { animation-duration: 3s; } }
+
 code.k { background: #eef1f6; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
 .help { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 .help li { margin-bottom: 4px; }
