@@ -102,6 +102,10 @@ Jenis berkas dikenali otomatis.
 
 Bisa mengunggah beberapa berkas sekaligus.
 
+Selain berkas platform, ada dua berkas yang Anda isi sendiri lewat **template** yang disediakan
+aplikasi: **HPP per produk** (menu HPP) dan **beban operasional** (menu Beban). Lihat bagian
+*HPP dan beban operasional* di bawah.
+
 ---
 
 ## 3. Cara Kerja Anti-Dobel
@@ -150,7 +154,9 @@ akan **0**.
 | **Pesanan** | Cari/filter seluruh pesanan, buka detail per pesanan |
 | **Produk** | Produk & varian terlaris, qty terjual, omzet, retur |
 | **Performa** | Rekap mingguan & bulanan + pertumbuhan, metode bayar, kurir, provinsi |
-| **Laba & Biaya** | Ringkasan seluruh pengurang dari pendapatan kotor sampai dana diterima, jembatan angka per platform, rekap bulanan, **laba bersih per produk**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
+| **Laba & Biaya** | Ringkasan lengkap dari pendapatan kotor sampai **laba usaha**, jembatan angka per platform, rekap bulanan, **laba per produk setelah HPP**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
+| **HPP** | Impor HPP per produk per bulan + **pemantauan produk yang belum ada HPP** |
+| **Beban** | Impor beban operasional per bulan (gaji, sewa, listrik, packaging, iklan, dll) |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses |
@@ -189,11 +195,55 @@ Jembatan angkanya selalu berimbang, dan **seluruh pengurang ditampilkan** di hal
 **Laba & Biaya** — pada ringkasan, pada jembatan per platform, maupun pada rekap bulanan:
 
 ```
-pendapatan kotor + diskon & voucher penjual + pengembalian dana
-+ biaya platform + penyesuaian + selisih pencatatan = dana diterima bersih
+  pendapatan kotor
+- diskon & voucher yang ditanggung penjual
+- pengembalian dana ke pembeli
+- biaya platform
++ penyesuaian
+= dana diterima bersih
+- HPP (harga pokok penjualan)
+= laba kotor
+- beban operasional
+= laba usaha
 ```
 
-### Laba bersih per produk
+HPP dan beban operasional dicocokkan pada **bulan settlement** yang sama, supaya biaya dan
+pendapatannya berada pada periode yang sama.
+
+### HPP dan beban operasional
+
+Supaya laporan menjadi laba-rugi yang utuh, ada dua data yang Anda isi sendiri karena tidak ada
+di berkas ekspor platform:
+
+**HPP (harga pokok penjualan)** &mdash; menu **HPP**. Diisi per produk per bulan lewat impor:
+
+1. Unduh template (Excel atau CSV). Template **sudah terisi daftar produk yang benar-benar
+   terjual**, lengkap dengan HPP yang sudah pernah diisi untuk bulan itu.
+2. Isi kolom *HPP per Unit*. Baris yang dikosongkan dilewati, jadi boleh dicicil.
+3. Unggah kembali.
+
+Pencocokan memakai **nama produk + variasi**, bukan SKU &mdash; pada berkas ekspor Tokopedia dan
+Shopee kolom SKU penjual sebagian besar kosong (pada data contoh: Shopee 1,2%, Tokopedia 44%).
+Karena itu jangan mengubah kolom *Nama Produk* dan *Variasi* pada template.
+
+**Beban operasional** &mdash; menu **Beban**. Gaji, sewa, listrik, packaging, iklan, dan
+lainnya, dicatat per bulan. Kategori bebas Anda tentukan sendiri. Baris dikunci per
+*bulan + kategori + keterangan*, jadi berkas yang sama boleh diunggah ulang tanpa dobel.
+
+Keduanya menerima **.xlsx maupun .csv** (pemisah `;` atau `,`), dan angka boleh ditulis dengan
+titik ribuan seperti `17.500.000`.
+
+### Pemantauan HPP yang belum diisi
+
+Menu **HPP** menampilkan kelengkapan per bulan &mdash; berapa produk terjual, berapa yang belum
+ada HPP-nya, dan persentase kelengkapannya. Daftar produk yang belum ada HPP diurutkan dari
+**nilai penjualan terbesar**, jadi yang paling berpengaruh ke laba bisa dikerjakan lebih dulu.
+
+Selama HPP belum diisi, produk tersebut dihitung **HPP = 0** sehingga labanya tampak lebih besar
+dari kenyataan. Halaman Laba &amp; Biaya memberi peringatan jelas kalau ini terjadi, jadi Anda
+tidak akan salah membaca angka tanpa sadar.
+
+### Laba per produk
 
 Platform hanya memberi angka settlement **per pesanan**, tidak per produk. Untuk mengetahui
 bersih tiap produk, aplikasi membagi nilai settlement ke setiap baris produk sesuai porsinya:

@@ -104,12 +104,53 @@ switch ($report) {
     case 'fee_category':
         $pnl = Reports::pnl($from, $to, $platform);
         csvOut("biaya_per_kategori_{$stamp}.csv",
-            ['Kategori', 'Total', 'Jumlah Baris'],
+            ['Kategori', 'Total'],
             array_map(static fn($r) => [
                 Profiles::LABELS[$r['fee_category']] ?? $r['fee_category'],
-                $r['total'], $r['baris'],
+                $r['total'],
             ], $pnl['kategori'])
         );
+
+    case 'missing_cost':
+        $ym = q('ym');
+        if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
+            $ym = null;
+        }
+        $rows = Reports::missingCosts($ym, 100000);
+        csvOut("hpp_belum_diisi_{$stamp}.csv",
+            ['Periode', 'Nama Produk', 'Variasi', 'Qty Terjual', 'Nilai Bersih'],
+            array_map(static fn($r) => [
+                $r['period_ym'], $r['produk'], $r['variasi'], $r['qty'], round((float) $r['nilai_bersih'], 2),
+            ], $rows)
+        );
+
+    case 'expenses':
+        $ym = q('ym');
+        if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
+            $ym = null;
+        }
+        $rows = Reports::expenseList($ym, 100000);
+        csvOut("beban_operasional_{$stamp}.csv",
+            ['Periode', 'Kategori', 'Keterangan', 'Jumlah'],
+            array_map(static fn($r) => [$r['period_ym'], $r['category'], $r['description'], $r['amount']], $rows)
+        );
+
+    case 'product_profit':
+        $psort = q('psort', 'laba');
+        $rows = Reports::productProfit($from, $to, $platform, 5000, (string) $psort);
+        csvOut("laba_per_produk_{$stamp}.csv", [
+            'Platform', 'Produk', 'Pesanan', 'Qty', 'Pendapatan Kotor',
+            'Diskon & Voucher Penjual', 'Pengembalian Dana', 'Biaya Platform',
+            'Dana Diterima Bersih', 'HPP', 'Laba', 'Marjin Laba %', 'Qty Tanpa HPP',
+        ], array_map(static fn($r) => [
+            $r['platform'], $r['produk'], $r['pesanan'], $r['qty'],
+            round((float) $r['kotor'], 2), round((float) $r['potongan'], 2),
+            round((float) $r['pengembalian'], 2), round((float) $r['biaya'], 2),
+            round((float) $r['bersih'], 2), round((float) $r['hpp'], 2),
+            round((float) $r['laba'], 2),
+            $r['marjin_laba'] === null ? '' : round((float) $r['marjin_laba'], 2),
+            $r['qty_tanpa_hpp'],
+        ], $rows));
 
     case 'product_net':
         $psort = q('psort', 'bersih');

@@ -20,6 +20,9 @@ $bridge  = Reports::bridge($from, $to, $platform);
 $bulanan = Reports::monthlySettlement($from, $to, $platform);
 $tarik   = Reports::withdrawals($from, $to, $platform);
 $tot     = Reports::bridgeTotals($bridge);
+$costSum = Reports::costSummary($from, $to, $platform);
+$beban   = Reports::expenseTotal($from, $to);
+$bebanCat = Reports::expenseByCategory($from, $to);
 
 $prodSort = q('psort', 'bersih');
 
@@ -37,6 +40,9 @@ $lazyBiaya = 'pnl_section.php?' . http_build_query(
 $kotor  = $tot['kotor'];
 $biaya  = $tot['biaya'];
 $bersih = $tot['bersih'];
+$hpp        = $costSum['hpp'];
+$labaKotor  = $bersih - $hpp;
+$labaUsaha  = $labaKotor - $beban;
 
 // Semua baris pengurang dari pendapatan kotor sampai dana diterima bersih.
 $langkah = [
@@ -46,7 +52,11 @@ $langkah = [
     ['Biaya platform', $tot['biaya'], 'Komisi, layanan, administrasi, dan biaya lain', ''],
     ['Penyesuaian', $tot['penyesuaian'], 'Kompensasi & koreksi dari platform', ''],
     ['Selisih pencatatan', $tot['selisih'], 'Selisih arsip platform, ditampilkan apa adanya', ''],
-    ['Dana diterima bersih', $tot['bersih'], 'Yang benar-benar masuk ke saldo penjual', 'foot'],
+    ['Dana diterima bersih', $tot['bersih'], 'Yang benar-benar masuk ke saldo penjual', 'sub'],
+    ['Harga pokok penjualan (HPP)', -$hpp, 'Modal barang yang terjual', ''],
+    ['Laba kotor', $labaKotor, 'Dana diterima bersih dikurangi HPP', 'sub'],
+    ['Beban operasional', -$beban, 'Gaji, sewa, listrik, packaging, dan lainnya', ''],
+    ['Laba usaha', $labaUsaha, 'Laba akhir setelah seluruh biaya', 'foot'],
 ];
 
 // Kategori yang benar-benar biaya (nilai negatif = beban).
@@ -58,13 +68,30 @@ $totalFeeCat = array_sum(array_map(static fn($k) => (float) $k['total'], $feeCat
 
 render_head('Laba & Biaya', 'pnl');
 ?>
-<h1>Laporan Laba &amp; Biaya Platform</h1>
+<h1>Laporan Laba &amp; Biaya</h1>
 <p class="sub">
   Berbasis <b>tanggal dana dilepaskan</b> (settlement), bukan tanggal pesanan &mdash; inilah dasar
   pencatatan akuntansi karena mencerminkan kas yang benar-benar diterima.
+  HPP dan beban operasional juga dicocokkan pada bulan settlement yang sama.
 </p>
 
 <?php render_filter($from, $to, $platform); ?>
+
+<?php if ($costSum['qty_tanpa_hpp'] > 0): ?>
+  <div class="alert warn">
+    <b>Laba belum lengkap.</b>
+    <?= num($costSum['produk_tanpa_hpp']) ?> produk (<?= num($costSum['qty_tanpa_hpp']) ?> unit terjual)
+    belum punya HPP pada bulan yang bersangkutan, jadi dihitung <b>HPP = 0</b> dan laba di bawah
+    tampak lebih besar dari kenyataan.
+    <a href="costs.php">Lengkapi HPP &rarr;</a>
+  </div>
+<?php endif; ?>
+<?php if ($beban == 0.0): ?>
+  <div class="alert info">
+    Belum ada <b>beban operasional</b> tercatat untuk periode ini, jadi laba usaha masih sama
+    dengan laba kotor. <a href="expenses.php">Catat beban operasional &rarr;</a>
+  </div>
+<?php endif; ?>
 
 <div class="kpis">
   <div class="kpi">
@@ -72,25 +99,25 @@ render_head('Laba & Biaya', 'pnl');
     <div class="value"><?= rp($kotor, true) ?></div>
     <div class="hint"><?= num($ring['trx'] ?? 0) ?> transaksi settlement</div>
   </div>
-  <div class="kpi bad">
-    <div class="label">Total seluruh pengurang</div>
-    <div class="value"><?= rp($kotor - $bersih === 0.0 ? 0 : -($kotor - $bersih), true) ?></div>
-    <div class="hint"><?= pct($kotor - $bersih, $kotor) ?> dari pendapatan kotor</div>
-  </div>
   <div class="kpi ok">
     <div class="label">Dana diterima bersih</div>
     <div class="value"><?= rp($bersih, true) ?></div>
-    <div class="hint">masuk ke saldo penjual</div>
+    <div class="hint"><?= pct($bersih, $kotor) ?> dari pendapatan kotor</div>
   </div>
-  <div class="kpi <?= $kotor > 0 && $bersih / max($kotor, 1) < 0.6 ? 'bad' : 'ok' ?>">
-    <div class="label">Marjin bersih</div>
-    <div class="value"><?= $kotor > 0 ? number_format($bersih / $kotor * 100, 1, ',', '.') . '%' : '-' ?></div>
-    <div class="hint">dana diterima &divide; pendapatan kotor</div>
+  <div class="kpi">
+    <div class="label">Laba kotor (setelah HPP)</div>
+    <div class="value"><?= rp($labaKotor, true) ?></div>
+    <div class="hint">HPP <?= rp($hpp, true) ?></div>
+  </div>
+  <div class="kpi <?= $labaUsaha < 0 ? 'bad' : 'ok' ?>">
+    <div class="label">Laba usaha</div>
+    <div class="value"><?= rp($labaUsaha, true) ?></div>
+    <div class="hint"><?= $kotor > 0 ? number_format($labaUsaha / $kotor * 100, 1, ',', '.') . '% dari kotor' : 'setelah beban operasional' ?></div>
   </div>
 </div>
 
 <div class="card">
-  <h2>Ringkasan: dari pendapatan kotor ke dana diterima bersih</h2>
+  <h2>Ringkasan: dari pendapatan kotor sampai laba usaha</h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
     Seluruh pengurang ditampilkan berurutan sampai angka akhir, jadi tidak ada potongan yang
     tersembunyi di dalam angka lain.
@@ -106,14 +133,14 @@ render_head('Laba & Biaya', 'pnl');
           if ($jenis === '' && (float) $nilai === 0.0) {
               continue;   // pengurang yang nihil tidak perlu ditampilkan
           } ?>
-        <tr<?= $jenis === 'foot' ? ' style="font-weight:700;background:#f7f9fc"' : '' ?>>
+        <tr<?= in_array($jenis, ['foot', 'sub'], true) ? ' style="font-weight:700;background:#f7f9fc"' : '' ?>>
           <td><?= $nama ?></td>
           <td class="muted" style="font-weight:400"><?= $ket ?></td>
-          <td class="num <?= (float) $nilai < 0 ? 'neg' : ($jenis === 'foot' ? 'pos' : '') ?>"><?= rp($nilai) ?></td>
+          <td class="num <?= (float) $nilai < 0 ? 'neg' : (in_array($jenis, ['foot', 'sub'], true) ? 'pos' : '') ?>"><?= rp($nilai) ?></td>
           <td class="num muted" style="font-weight:400"><?= $kotor > 0 ? pct(abs((float) $nilai), $kotor) : '-' ?></td>
           <td>
             <?php if ($jenis !== 'head'): ?>
-              <div class="bar"><span style="width:<?= $kotor > 0 ? min(100, round(abs((float) $nilai) / $kotor * 100)) : 0 ?>%;background:<?= $jenis === 'foot' ? '#128a5b' : '#c0392b' ?>"></span></div>
+              <div class="bar"><span style="width:<?= $kotor > 0 ? min(100, round(abs((float) $nilai) / $kotor * 100)) : 0 ?>%;background:<?= in_array($jenis, ['foot', 'sub'], true) ? '#128a5b' : '#c0392b' ?>"></span></div>
             <?php endif; ?>
           </td>
         </tr>
@@ -264,7 +291,7 @@ render_head('Laba & Biaya', 'pnl');
 <div class="card">
   <h2>
     Laba bersih per produk
-    <a class="btn ghost sm" href="<?= e(exportLink('product_net', ['psort' => $prodSort])) ?>">Ekspor CSV</a>
+    <a class="btn ghost sm" href="<?= e(exportLink('product_profit', ['psort' => $prodSort])) ?>">Ekspor CSV</a>
   </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
     Platform memberi angka settlement <b>per pesanan</b>, bukan per produk. Karena itu nilai
@@ -293,6 +320,33 @@ render_head('Laba & Biaya', 'pnl');
     <noscript><a href="<?= e($lazyBiaya) ?>">Buka rincian komponen biaya</a></noscript>
   </div>
 </div>
+
+<?php if ($bebanCat !== []): ?>
+<div class="card">
+  <h2>
+    Beban operasional per kategori
+    <a class="btn ghost sm" href="expenses.php">Kelola beban</a>
+  </h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Kategori</th><th class="num">Jumlah</th><th class="num">% dari kotor</th><th style="width:110px"></th></tr></thead>
+      <tbody>
+      <?php $maxB = max(array_map(static fn($b) => (float) $b['total'], $bebanCat)); ?>
+      <?php foreach ($bebanCat as $b): ?>
+        <tr>
+          <td><?= e($b['category']) ?></td>
+          <td class="num neg"><?= rp(-(float) $b['total']) ?></td>
+          <td class="num muted"><?= pct($b['total'], $kotor) ?></td>
+          <td><div class="bar"><span style="width:<?= $maxB > 0 ? round((float) $b['total'] / $maxB * 100) : 0 ?>%;background:#c0392b"></span></div></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+      <tfoot><tr><td>Total beban operasional</td><td class="num neg"><?= rp(-$beban) ?></td>
+        <td class="num"><?= pct($beban, $kotor) ?></td><td></td></tr></tfoot>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 
 <?php if ($tarik !== []): ?>
 <div class="card">

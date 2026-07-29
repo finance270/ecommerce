@@ -60,7 +60,10 @@ render_head('Riwayat Upload', 'uploads');
           </td>
           <td class="nowrap">
             <?= $r['platform'] !== null ? platformBadge((string) $r['platform']) : '<span class="muted">-</span>' ?>
-            <div class="muted" style="font-size:11px"><?= e($r['dataset'] === 'order' ? 'Pesanan' : ($r['dataset'] === 'settlement' ? 'Settlement' : '-')) ?></div>
+            <div class="muted" style="font-size:11px"><?= e(match ($r['dataset']) {
+              'order' => 'Pesanan', 'settlement' => 'Settlement',
+              'hpp' => 'HPP produk', 'beban' => 'Beban operasional', default => '-',
+            }) ?></div>
           </td>
           <td class="nowrap muted">
             <?= $r['period_from'] !== null ? shortDate($r['period_from']) . ' – ' . shortDate($r['period_to']) : '-' ?>

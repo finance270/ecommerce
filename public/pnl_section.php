@@ -25,8 +25,8 @@ $platform = platformFilter();
 $section  = q('section');
 
 if ($section === 'produk') {
-    $prodSort = q('psort', 'bersih');
-    $produk   = Reports::productNet($from, $to, $platform, 100, (string) $prodSort);
+    $prodSort = q('psort', 'laba');
+    $produk   = Reports::productProfit($from, $to, $platform, 100, (string) $prodSort);
     $cover    = Reports::productNetCoverage($from, $to, $platform);
     $cov = $cover['total_bersih'] != 0.0 ? $cover['covered_bersih'] / $cover['total_bersih'] * 100 : 0;
     ?>
@@ -46,10 +46,11 @@ if ($section === 'produk') {
       <div class="field">
         <label>Urutkan produk</label>
         <select name="psort" onchange="this.form.submit()">
+          <option value="laba"   <?= $prodSort === 'laba'   ? 'selected' : '' ?>>Laba tertinggi</option>
+          <option value="marjin" <?= $prodSort === 'marjin' ? 'selected' : '' ?>>Marjin laba terbaik</option>
           <option value="bersih" <?= $prodSort === 'bersih' ? 'selected' : '' ?>>Bersih tertinggi</option>
           <option value="kotor"  <?= $prodSort === 'kotor'  ? 'selected' : '' ?>>Kotor tertinggi</option>
           <option value="qty"    <?= $prodSort === 'qty'    ? 'selected' : '' ?>>Terjual terbanyak</option>
-          <option value="marjin" <?= $prodSort === 'marjin' ? 'selected' : '' ?>>Marjin terbaik</option>
         </select>
       </div>
     </form>
@@ -61,16 +62,19 @@ if ($section === 'produk') {
           <th class="num">Pesanan</th><th class="num">Qty</th>
           <th class="num">Kotor</th><th class="num">Diskon &amp; voucher</th>
           <th class="num">Pengembalian</th><th class="num">Biaya platform</th>
-          <th class="num">Bersih</th><th class="num">Marjin</th>
+          <th class="num">Bersih</th><th class="num">HPP</th>
+          <th class="num">Laba</th><th class="num">Marjin laba</th>
         </tr></thead>
         <tbody>
         <?php
-        $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'pengembalian' => 0.0, 'biaya' => 0.0, 'bersih' => 0.0, 'qty' => 0.0];
+        $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'pengembalian' => 0.0, 'biaya' => 0.0,
+               'bersih' => 0.0, 'hpp' => 0.0, 'laba' => 0.0, 'qty' => 0.0];
         foreach ($produk as $i => $p):
             foreach ($pt as $k => $_) {
                 $pt[$k] += (float) $p[$k];
             }
-            $m = $p['marjin'] === null ? null : (float) $p['marjin']; ?>
+            $m = $p['marjin_laba'] === null ? null : (float) $p['marjin_laba'];
+            $noHpp = (int) $p['qty_tanpa_hpp'] > 0; ?>
           <tr>
             <td class="muted"><?= $i + 1 ?></td>
             <td class="trunc" title="<?= e($p['produk']) ?>"><?= e($p['produk']) ?></td>
@@ -81,14 +85,18 @@ if ($section === 'produk') {
             <td class="num <?= (float) $p['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['potongan']) ?></td>
             <td class="num <?= (float) $p['pengembalian'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['pengembalian']) ?></td>
             <td class="num neg"><?= rp($p['biaya']) ?></td>
-            <td class="num pos"><b><?= rp($p['bersih']) ?></b></td>
-            <td class="num <?= $m === null ? 'muted' : ($m < 50 ? 'neg' : '') ?>">
+            <td class="num"><?= rp($p['bersih']) ?></td>
+            <td class="num <?= $noHpp ? 'warn' : 'neg' ?>" <?= $noHpp ? 'title="Sebagian atau seluruh unit belum punya HPP"' : '' ?>>
+              <?= (float) $p['hpp'] == 0.0 && $noHpp ? '<span class="badge warn">belum ada</span>' : rp(-(float) $p['hpp']) ?>
+            </td>
+            <td class="num <?= (float) $p['laba'] < 0 ? 'neg' : 'pos' ?>"><b><?= rp($p['laba']) ?></b></td>
+            <td class="num <?= $m === null ? 'muted' : ($m < 20 ? 'neg' : '') ?>">
               <?= $m === null ? '-' : number_format($m, 1, ',', '.') . '%' ?>
             </td>
           </tr>
         <?php endforeach; ?>
         <?php if ($produk === []): ?>
-          <tr><td colspan="11" class="muted">
+          <tr><td colspan="13" class="muted">
             Belum bisa dihitung. Perlu berkas pesanan <i>dan</i> berkas laporan penghasilan
             untuk periode yang sama.
           </td></tr>
@@ -102,8 +110,10 @@ if ($section === 'produk') {
           <td class="num neg"><?= rp($pt['potongan']) ?></td>
           <td class="num neg"><?= rp($pt['pengembalian']) ?></td>
           <td class="num neg"><?= rp($pt['biaya']) ?></td>
-          <td class="num pos"><?= rp($pt['bersih']) ?></td>
-          <td class="num"><?= $pt['kotor'] > 0 ? number_format($pt['bersih'] / $pt['kotor'] * 100, 1, ',', '.') . '%' : '-' ?></td>
+          <td class="num"><?= rp($pt['bersih']) ?></td>
+          <td class="num neg"><?= rp(-$pt['hpp']) ?></td>
+          <td class="num pos"><?= rp($pt['laba']) ?></td>
+          <td class="num"><?= $pt['bersih'] > 0 ? number_format($pt['laba'] / $pt['bersih'] * 100, 1, ',', '.') . '%' : '-' ?></td>
         </tr></tfoot>
         <?php endif; ?>
       </table>

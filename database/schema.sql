@@ -174,6 +174,8 @@ CREATE TABLE IF NOT EXISTS order_items (
 
   order_date            DATE NULL,
   status_norm           ENUM('selesai','batal','proses','retur','lainnya') NOT NULL DEFAULT 'lainnya',
+  -- Kunci pencocokan HPP: sha1(nama produk|variasi) yang sudah dinormalkan.
+  cost_key              CHAR(40) NULL,
 
   row_hash              CHAR(40) NOT NULL,
   upload_id             BIGINT UNSIGNED NULL,
@@ -185,7 +187,8 @@ CREATE TABLE IF NOT EXISTS order_items (
   KEY idx_items_order (order_pk),
   KEY idx_items_sku (platform, sku_id),
   KEY idx_items_product (product_name(120)),
-  KEY idx_items_date (order_date, status_norm)
+  KEY idx_items_date (order_date, status_norm),
+  KEY idx_items_cost_key (cost_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -391,3 +394,47 @@ SELECT
   SUM(s.fee_lainnya)    AS fee_lainnya
 FROM settlements s
 GROUP BY s.platform, s.settlement_date;
+
+-- ---------------------------------------------------------------------
+-- HPP (Harga Pokok Penjualan) per produk per bulan.
+-- Dicocokkan lewat nama produk + variasi karena pada ekspor Tokopedia dan
+-- Shopee kolom SKU penjual sebagian besar kosong.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS product_cost (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  period_ym     CHAR(7)      NOT NULL,               -- 'YYYY-MM'
+  cost_key      CHAR(40)     NOT NULL,               -- sha1(nama|variasi) ternormalisasi
+  product_name  VARCHAR(512) NOT NULL,
+  variation     VARCHAR(255) NULL,
+  sku           VARCHAR(128) NULL,                   -- keterangan saja, tidak dipakai mencocokkan
+  cost_per_unit DECIMAL(18,2) NOT NULL DEFAULT 0,
+  note          VARCHAR(255) NULL,
+  row_hash      CHAR(40)     NOT NULL,
+  upload_id     BIGINT UNSIGNED NULL,
+  first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_cost (period_ym, cost_key),
+  KEY idx_cost_period (period_ym),
+  KEY idx_cost_key (cost_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Beban operasional per bulan (gaji, sewa, listrik, iklan, dll).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS operating_expense (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  period_ym     CHAR(7)      NOT NULL,
+  category      VARCHAR(64)  NOT NULL,
+  description   VARCHAR(255) NOT NULL DEFAULT '',
+  amount        DECIMAL(18,2) NOT NULL DEFAULT 0,
+  expense_key   CHAR(40)     NOT NULL,               -- sha1(kategori|keterangan)
+  row_hash      CHAR(40)     NOT NULL,
+  upload_id     BIGINT UNSIGNED NULL,
+  first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_expense (period_ym, expense_key),
+  KEY idx_expense_period (period_ym),
+  KEY idx_expense_cat (category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -466,6 +466,297 @@ final class Reports
     }
 
     // -----------------------------------------------------------------
+    // HPP & beban operasional
+    // -----------------------------------------------------------------
+
+    /**
+     * HPP dicocokkan memakai BULAN SETTLEMENT, sama seperti seluruh halaman
+     * Laba & Biaya, supaya biaya dan pendapatannya berada pada periode yang
+     * sama. Dipakai bersama oleh laporan laba per produk dan pemantauan HPP.
+     */
+    private static function costJoinSql(): string
+    {
+        return "LEFT JOIN product_cost pc
+                    ON pc.cost_key = i.cost_key AND pc.period_ym = st.period_ym";
+    }
+
+    /** Sub-query settlement per pesanan + bulan settlement-nya. */
+    private static function settlementPerOrderSql(string $where): string
+    {
+        return "SELECT platform, order_id,
+                       DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
+                       SUM(gross_amount)   AS gross_amount,
+                       SUM(total_potongan) AS total_potongan,
+                       SUM(refund_amount)  AS refund_amount,
+                       SUM(total_fee)      AS total_fee,
+                       SUM(net_amount)     AS net_amount
+                FROM settlements
+                WHERE {$where}
+                GROUP BY platform, order_id";
+    }
+
+    /** Laba per produk: alokasi settlement dikurangi HPP. */
+    public static function productProfit(?string $from, ?string $to, ?string $platform, int $limit = 100, string $sort = 'laba'): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        $order = match ($sort) {
+            'kotor'  => 'kotor',
+            'qty'    => 'qty',
+            'bersih' => 'bersih',
+            'marjin' => 'marjin_laba',
+            default  => 'laba',
+        };
+        $sub = self::settlementPerOrderSql($w);
+        $join = self::costJoinSql();
+
+        return Db::all(
+            "SELECT i.platform,
+                    COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                    COUNT(DISTINCT i.order_id) AS pesanan,
+                    SUM(i.qty)                 AS qty,
+                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
+                    SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
+                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
+                    SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
+                    SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
+                    SUM(i.qty * COALESCE(pc.cost_per_unit, 0))          AS hpp,
+                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END)  AS qty_tanpa_hpp,
+                    SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
+                        - SUM(i.qty * COALESCE(pc.cost_per_unit, 0))    AS laba,
+                    CASE WHEN SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) > 0
+                         THEN (SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
+                               - SUM(i.qty * COALESCE(pc.cost_per_unit, 0)))
+                              / SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) * 100
+                         ELSE NULL END AS marjin_laba
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}
+             GROUP BY i.platform, produk
+             ORDER BY {$order} DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /** Ringkasan HPP untuk seluruh rentang: total HPP + qty yang belum punya HPP. */
+    public static function costSummary(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        $sub = self::settlementPerOrderSql($w);
+        $join = self::costJoinSql();
+
+        $row = Db::one(
+            "SELECT COALESCE(SUM(i.qty * COALESCE(pc.cost_per_unit,0)),0)         AS hpp,
+                    COALESCE(SUM(i.qty),0)                                        AS qty_total,
+                    COALESCE(SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END),0) AS qty_tanpa_hpp,
+                    COUNT(DISTINCT CASE WHEN pc.id IS NULL THEN i.cost_key END)   AS produk_tanpa_hpp
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}",
+            $a
+        ) ?? [];
+
+        return [
+            'hpp'              => (float) ($row['hpp'] ?? 0),
+            'qty_total'        => (int) ($row['qty_total'] ?? 0),
+            'qty_tanpa_hpp'    => (int) ($row['qty_tanpa_hpp'] ?? 0),
+            'produk_tanpa_hpp' => (int) ($row['produk_tanpa_hpp'] ?? 0),
+        ];
+    }
+
+    /**
+     * Pemantauan: produk yang terjual pada suatu bulan tapi HPP-nya belum diisi.
+     * Diurutkan dari yang nilainya paling besar supaya yang paling berpengaruh
+     * ke laba dikerjakan lebih dulu.
+     */
+    public static function missingCosts(?string $ym, int $limit = 300): array
+    {
+        $w = 'settlement_date IS NOT NULL';
+        $a = [];
+        if ($ym !== null) {
+            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
+            $a[] = $ym;
+        }
+        $sub = self::settlementPerOrderSql($w);
+        $join = self::costJoinSql();
+
+        return Db::all(
+            "SELECT st.period_ym,
+                    COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                    COALESCE(i.variation,'') AS variasi,
+                    i.cost_key,
+                    SUM(i.qty) AS qty,
+                    SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) AS nilai_bersih
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}
+             WHERE pc.id IS NULL
+             GROUP BY st.period_ym, produk, variasi, i.cost_key
+             ORDER BY nilai_bersih DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /** Ringkasan kelengkapan HPP per bulan. */
+    public static function costCoverageByMonth(): array
+    {
+        $sub = self::settlementPerOrderSql('settlement_date IS NOT NULL');
+        $join = self::costJoinSql();
+
+        return Db::all(
+            "SELECT st.period_ym,
+                    COUNT(DISTINCT i.cost_key)                                  AS produk,
+                    COUNT(DISTINCT CASE WHEN pc.id IS NULL THEN i.cost_key END) AS produk_tanpa_hpp,
+                    SUM(i.qty)                                                  AS qty,
+                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END)          AS qty_tanpa_hpp,
+                    SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
+                    SUM(i.qty * COALESCE(pc.cost_per_unit,0))                   AS hpp
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}
+             GROUP BY st.period_ym
+             ORDER BY st.period_ym DESC"
+        );
+    }
+
+    /** Daftar HPP yang tersimpan. */
+    public static function costList(?string $ym, ?string $search, int $limit = 500): array
+    {
+        $w = ['1=1'];
+        $a = [];
+        if ($ym !== null) {
+            $w[] = 'period_ym = ?';
+            $a[] = $ym;
+        }
+        if ($search !== null) {
+            $w[] = '(product_name LIKE ? OR variation LIKE ? OR sku LIKE ?)';
+            $like = '%' . $search . '%';
+            array_push($a, $like, $like, $like);
+        }
+        return Db::all(
+            'SELECT * FROM product_cost WHERE ' . implode(' AND ', $w)
+            . " ORDER BY period_ym DESC, product_name LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /** Beban operasional: total per bulan dan per kategori. */
+    public static function expenseByMonth(?string $from, ?string $to): array
+    {
+        [$w, $a] = self::periodFilter($from, $to);
+        return Db::all(
+            "SELECT period_ym, SUM(amount) AS total, COUNT(*) AS baris
+             FROM operating_expense WHERE {$w}
+             GROUP BY period_ym ORDER BY period_ym DESC",
+            $a
+        );
+    }
+
+    public static function expenseByCategory(?string $from, ?string $to): array
+    {
+        [$w, $a] = self::periodFilter($from, $to);
+        return Db::all(
+            "SELECT category, SUM(amount) AS total, COUNT(*) AS baris
+             FROM operating_expense WHERE {$w}
+             GROUP BY category ORDER BY total DESC",
+            $a
+        );
+    }
+
+    public static function expenseList(?string $ym, int $limit = 500): array
+    {
+        $w = ['1=1'];
+        $a = [];
+        if ($ym !== null) {
+            $w[] = 'period_ym = ?';
+            $a[] = $ym;
+        }
+        return Db::all(
+            'SELECT * FROM operating_expense WHERE ' . implode(' AND ', $w)
+            . " ORDER BY period_ym DESC, category, description LIMIT {$limit}",
+            $a
+        );
+    }
+
+    public static function expenseTotal(?string $from, ?string $to): float
+    {
+        [$w, $a] = self::periodFilter($from, $to);
+        return (float) Db::val("SELECT COALESCE(SUM(amount),0) FROM operating_expense WHERE {$w}", $a, 0);
+    }
+
+    /** Filter rentang tanggal terhadap kolom period_ym ('YYYY-MM'). */
+    private static function periodFilter(?string $from, ?string $to): array
+    {
+        $w = ['1=1'];
+        $a = [];
+        if ($from !== null) {
+            $w[] = 'period_ym >= ?';
+            $a[] = substr($from, 0, 7);
+        }
+        if ($to !== null) {
+            $w[] = 'period_ym <= ?';
+            $a[] = substr($to, 0, 7);
+        }
+        return [implode(' AND ', $w), $a];
+    }
+
+    /** Daftar bulan yang tersedia dari data settlement. */
+    public static function availableMonths(): array
+    {
+        return array_column(
+            Db::all(
+                "SELECT DISTINCT DATE_FORMAT(settlement_date,'%Y-%m') AS ym
+                 FROM settlements WHERE settlement_date IS NOT NULL ORDER BY ym DESC"
+            ),
+            'ym'
+        );
+    }
+
+    /** Produk yang pernah terjual - dipakai mengisi template HPP. */
+    public static function soldProducts(?string $ym = null): array
+    {
+        if ($ym === null) {
+            return Db::all(
+                "SELECT COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                        COALESCE(i.variation,'') AS variasi,
+                        MAX(COALESCE(i.seller_sku,'')) AS sku,
+                        SUM(i.qty) AS qty
+                 FROM order_items i
+                 GROUP BY produk, variasi
+                 ORDER BY qty DESC"
+            );
+        }
+        $sub = self::settlementPerOrderSql("settlement_date IS NOT NULL AND DATE_FORMAT(settlement_date,'%Y-%m') = ?");
+        return Db::all(
+            "SELECT COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                    COALESCE(i.variation,'') AS variasi,
+                    MAX(COALESCE(i.seller_sku,'')) AS sku,
+                    SUM(i.qty) AS qty
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             GROUP BY produk, variasi
+             ORDER BY qty DESC",
+            [$ym]
+        );
+    }
+
+    // -----------------------------------------------------------------
     // Performa
     // -----------------------------------------------------------------
 

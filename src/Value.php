@@ -158,6 +158,50 @@ final class Value
         return $dt === null ? null : substr($dt, 0, 10);
     }
 
+    /**
+     * Kunci pencocokan HPP: nama produk + variasi yang sudah dinormalkan.
+     *
+     * Dipakai nama+variasi, bukan SKU, karena pada ekspor Tokopedia dan Shopee
+     * kolom SKU penjual sebagian besar kosong.
+     */
+    public static function costKey(?string $productName, ?string $variation): string
+    {
+        $norm = static function (?string $s): string {
+            $s = mb_strtolower(trim((string) $s));
+            $s = str_replace("\xc2\xa0", ' ', $s);
+            return preg_replace('/\s+/u', ' ', $s) ?? $s;
+        };
+        return sha1($norm($productName) . '|' . $norm($variation));
+    }
+
+    /** Kunci baris beban operasional: kategori + keterangan. */
+    public static function expenseKey(?string $category, ?string $description): string
+    {
+        $norm = static fn(?string $s): string =>
+            preg_replace('/\s+/u', ' ', mb_strtolower(trim((string) $s))) ?? '';
+        return sha1($norm($category) . '|' . $norm($description));
+    }
+
+    /** Normalisasi periode ke 'YYYY-MM'. Menerima 2026-01, 01/2026, Jan-2026, dll. */
+    public static function periodYm(mixed $v): ?string
+    {
+        $s = self::text($v);
+        if ($s === null) {
+            return null;
+        }
+        if (preg_match('/^(\d{4})[-\/.](\d{1,2})$/', $s, $m)) {
+            return sprintf('%04d-%02d', (int) $m[1], (int) $m[2]);
+        }
+        if (preg_match('/^(\d{1,2})[-\/.](\d{4})$/', $s, $m)) {
+            return sprintf('%04d-%02d', (int) $m[2], (int) $m[1]);
+        }
+        if (preg_match('/^(\d{4})-(\d{2})-\d{2}/', $s, $m)) {
+            return $m[1] . '-' . $m[2];
+        }
+        $dt = self::dateTime($s);
+        return $dt === null ? null : substr($dt, 0, 7);
+    }
+
     /** Kode stabil untuk nama kolom biaya. */
     public static function slug(string $label, int $maxLen = 110): string
     {

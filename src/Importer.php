@@ -374,6 +374,11 @@ final class Importer
         unset($hashSrc['order_pk']);
         $row['row_hash'] = sha1(json_encode($hashSrc, JSON_UNESCAPED_UNICODE) ?: '');
         $row['upload_id'] = $this->uploadId;
+
+        // Sengaja ditambahkan SETELAH row_hash: kunci ini hanya turunan dari
+        // nama produk + variasi yang sudah ikut di-hash. Kalau ikut dihitung,
+        // seluruh baris lama akan dianggap berubah saat aplikasi diperbarui.
+        $row['cost_key'] = Value::costKey($row['product_name'] ?? null, $row['variation'] ?? null);
         return $row;
     }
 

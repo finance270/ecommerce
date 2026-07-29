@@ -72,11 +72,41 @@ function moveRawJson(PDO $pdo, string $dbName, string $table, string $rawTable, 
     return true;
 }
 
+/**
+ * Mengisi order_items.cost_key untuk baris lama.
+ *
+ * Dihitung di PHP, bukan lewat SHA1() di SQL, supaya normalisasinya persis
+ * sama dengan yang dipakai saat impor (huruf kecil, spasi ganda dirapikan).
+ * Kombinasi nama+variasi jumlahnya sedikit, jadi cukup beberapa ratus UPDATE.
+ */
+function backfillCostKeys(PDO $pdo): int
+{
+    $combos = $pdo->query(
+        'SELECT product_name, variation FROM order_items
+         WHERE cost_key IS NULL GROUP BY product_name, variation'
+    )->fetchAll(PDO::FETCH_ASSOC);
+
+    $st = $pdo->prepare(
+        'UPDATE order_items SET cost_key = ?
+         WHERE cost_key IS NULL AND product_name <=> ? AND variation <=> ?'
+    );
+    foreach ($combos as $c) {
+        $st->execute([
+            Value::costKey($c['product_name'], $c['variation']),
+            $c['product_name'],
+            $c['variation'],
+        ]);
+    }
+    return count($combos);
+}
+
 function runMigrations(PDO $pdo, string $dbName): array
 {
     $wanted = [
         ['settlements', 'total_potongan',
          "ALTER TABLE settlements ADD COLUMN total_potongan DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER discount_seller"],
+        ['order_items', 'cost_key',
+         "ALTER TABLE order_items ADD COLUMN cost_key CHAR(40) NULL AFTER status_norm"],
     ];
 
     $done = [];
@@ -111,6 +141,18 @@ function runMigrations(PDO $pdo, string $dbName): array
         )->fetchColumn() ?: 0);
         if ($tableExists > 0 && moveRawJson($pdo, $dbName, $t, $rt, $fk)) {
             $done[] = "{$t}.raw_json dipindah ke {$rt}";
+        }
+    }
+
+    // Isi kunci pencocokan HPP untuk baris yang sudah ada.
+    $tableExists = (int) ($pdo->query(
+        "SELECT COUNT(*) FROM information_schema.tables
+         WHERE table_schema = " . $pdo->quote($dbName) . " AND table_name = 'order_items'"
+    )->fetchColumn() ?: 0);
+    if ($tableExists > 0 && columnExists($pdo, $dbName, 'order_items', 'cost_key')) {
+        $filled = backfillCostKeys($pdo);
+        if ($filled > 0) {
+            $done[] = "kunci HPP untuk {$filled} kombinasi produk";
         }
     }
 
