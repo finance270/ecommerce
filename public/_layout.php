@@ -21,6 +21,7 @@ function render_head(string $title, string $active = ''): void
         'expenses.php'       => ['Beban', 'expenses'],
         'settlements.php'    => ['Settlement', 'settlements'],
         'reconciliation.php' => ['Rekonsiliasi', 'recon'],
+        'monitoring.php'     => ['Monitoring', 'monitoring'],
         'uploads.php'        => ['Riwayat Upload', 'uploads'],
     ];
     ?><!doctype html>

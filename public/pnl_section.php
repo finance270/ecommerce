@@ -28,14 +28,18 @@ if ($section === 'produk') {
     $prodSort = q('psort', 'laba');
     $produk   = Reports::productProfit($from, $to, $platform, 100, (string) $prodSort);
     $cover    = Reports::productNetCoverage($from, $to, $platform);
-    $cov = $cover['total_bersih'] != 0.0 ? $cover['covered_bersih'] / $cover['total_bersih'] * 100 : 0;
+    // Berbasis jumlah pesanan, bukan nilai: nilai settlement bisa negatif
+    // (pembalikan) sehingga persentase berbasis nilai bisa melewati 100%.
+    $cov = $cover['total_pesanan'] > 0
+        ? $cover['covered_pesanan'] / $cover['total_pesanan'] * 100 : 100.0;
     ?>
     <?php if ($cover['covered_pesanan'] < $cover['total_pesanan']): ?>
       <div class="alert warn" style="margin-bottom:14px">
-        Baru <b><?= number_format($cov, 1, ',', '.') ?>%</b> dari dana bersih yang bisa dipecah ke produk
+        Baru <b><?= number_format($cov, 1, ',', '.') ?>%</b> pesanan yang bisa dipecah ke produk
         (<?= num($cover['covered_pesanan']) ?> dari <?= num($cover['total_pesanan']) ?> pesanan).
         Sisanya settlement yang <b>berkas pesanannya belum diunggah</b>, sehingga isi produknya belum diketahui.
         Unggah berkas <i>Semua Pesanan</i> / <i>Order</i> untuk periode terkait agar analisis ini lengkap.
+        <a href="monitoring.php">Lihat periode mana yang kurang &rarr;</a>
       </div>
     <?php endif; ?>
 

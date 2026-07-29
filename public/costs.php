@@ -46,8 +46,24 @@ if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
 }
 $search   = q('q');
 $coverage = Reports::costCoverageByMonth();
-$missing  = Reports::missingCosts($ym, 300);
 $list     = Reports::costList($ym, $search, 500);
+
+// Ambang kewajaran marjin, bisa disesuaikan dari halaman.
+$warnPct = (float) (q('warn') ?? 70);
+$badPct  = (float) (q('bad') ?? 100);
+$warnPct = max(0.0, min(100.0, $warnPct));
+$badPct  = max($warnPct, min(200.0, $badPct));
+
+// Dua bagian yang harus menelusuri seluruh baris produk diambil lewat
+// permintaan terpisah supaya halaman langsung tampil.
+$qs = static fn(array $p): string => http_build_query(
+    array_filter($p, static fn($v) => $v !== null && $v !== '')
+);
+$lazyKurang = 'costs_section.php?' . $qs(['section' => 'kurang', 'ym' => $ym]);
+$lazyCek    = 'costs_section.php?' . $qs([
+    'section' => 'cek', 'ym' => $ym, 'warn' => $warnPct, 'bad' => $badPct,
+    'platform' => platformFilter(),
+]);
 
 render_head('HPP Produk', 'costs');
 ?>
@@ -191,24 +207,27 @@ render_head('HPP Produk', 'costs');
       </select>
     </div>
   </form>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Bulan</th><th>Produk</th><th>Variasi</th><th class="num">Qty terjual</th><th class="num">Nilai bersih</th></tr></thead>
-      <tbody>
-      <?php foreach ($missing as $m): ?>
-        <tr>
-          <td class="nowrap"><?= e($m['period_ym']) ?></td>
-          <td class="trunc" title="<?= e($m['produk']) ?>"><?= e($m['produk']) ?></td>
-          <td><?= e($m['variasi'] !== '' ? $m['variasi'] : '-') ?></td>
-          <td class="num"><?= num($m['qty']) ?></td>
-          <td class="num"><?= rp($m['nilai_bersih']) ?></td>
-        </tr>
-      <?php endforeach; ?>
-      <?php if ($missing === []): ?>
-        <tr><td colspan="5" class="pos">Semua produk yang terjual sudah punya HPP.</td></tr>
-      <?php endif; ?>
-      </tbody>
-    </table>
+  <div data-lazy="<?= e($lazyKurang) ?>">
+    <p class="loading">Menelusuri produk yang terjual&hellip;</p>
+    <noscript><a href="<?= e($lazyKurang) ?>">Buka daftar produk tanpa HPP</a></noscript>
+  </div>
+</div>
+
+<div class="card">
+  <h2>
+    Uji kewajaran HPP yang sudah diisi
+    <a class="btn ghost sm" href="<?= e('export.php?report=cost_check' . ($ym !== null ? '&ym=' . urlencode($ym) : '') . '&warn=' . $warnPct . '&bad=' . $badPct) ?>">Ekspor CSV</a>
+  </h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:12px">
+    Marjin laba = (dana bersih &minus; HPP) &divide; dana bersih. Marjin yang mendekati
+    <b><?= number_format($badPct, 0, ',', '.') ?>%</b> berarti HPP nyaris nol dibanding
+    pendapatannya &mdash; hampir pasti salah isi. Di atas
+    <b><?= number_format($warnPct, 0, ',', '.') ?>%</b> perlu dicek ulang.
+    Marjin negatif berarti HPP melebihi pendapatan (jual rugi).
+  </p>
+  <div data-lazy="<?= e($lazyCek) ?>">
+    <p class="loading">Menghitung marjin tiap produk&hellip;</p>
+    <noscript><a href="<?= e($lazyCek) ?>">Buka hasil uji kewajaran HPP</a></noscript>
   </div>
 </div>
 

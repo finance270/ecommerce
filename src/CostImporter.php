@@ -223,6 +223,13 @@ final class CostImporter
                 $problems[] = "Baris {$n}: HPP negatif ({$rawCost})";
                 continue;
             }
+            if ($cost === 0.0) {
+                // Angka 0 diperlakukan sama dengan belum diisi. Kalau disimpan,
+                // produknya akan terlihat "sudah ada HPP" padahal labanya
+                // dihitung seolah tanpa modal.
+                $totals['skipped']++;
+                continue;
+            }
 
             $variation = $get('variation');
             $rec = [
@@ -283,12 +290,19 @@ final class CostImporter
                 continue;
             }
 
+            $amount = round(abs(Value::money($rawAmt)), 2);
+            if ($amount === 0.0) {
+                // Baris template yang masih 0 dianggap belum diisi.
+                $totals['skipped']++;
+                continue;
+            }
+
             $desc = $get('description') ?? '';
             $rec = [
                 'period_ym'   => $period,
                 'category'    => mb_substr($cat, 0, 64),
                 'description' => mb_substr($desc, 0, 255),
-                'amount'      => round(abs(Value::money($rawAmt)), 2),  // beban selalu dicatat positif
+                'amount'      => $amount,  // beban selalu dicatat positif
                 'expense_key' => Value::expenseKey($cat, $desc),
             ];
             $rec['row_hash'] = sha1(json_encode($rec, JSON_UNESCAPED_UNICODE) ?: '');

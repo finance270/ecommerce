@@ -159,6 +159,7 @@ akan **0**.
 | **Beban** | Impor beban operasional per bulan (gaji, sewa, listrik, packaging, iklan, dll) |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
+| **Monitoring** | Periode mana yang datanya belum diperbarui, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses |
 
 Semua laporan bisa diekspor ke **CSV** (UTF-8 + pemisah `;`, langsung rapi di Excel Indonesia).
@@ -232,6 +233,53 @@ lainnya, dicatat per bulan. Kategori bebas Anda tentukan sendiri. Baris dikunci 
 
 Keduanya menerima **.xlsx maupun .csv** (pemisah `;` atau `,`), dan angka boleh ditulis dengan
 titik ribuan seperti `17.500.000`.
+
+### Monitoring kelengkapan data
+
+Menu **Monitoring** menjawab pertanyaan "periode mana yang belum saya update":
+
+- **Berkas terakhir diunggah** untuk tiap jenis (4 berkas platform + HPP + beban), lengkap
+  dengan umurnya. Lewat seminggu ditandai, lewat dua minggu ditandai lebih keras.
+- **Kelengkapan per bulan**: jumlah pesanan, jumlah settlement, persentase *alokasi produk*,
+  kelengkapan HPP, dan apakah beban operasional sudah diisi.
+- **Settlement yang belum ada data pesanannya** — inilah penyebab angka seperti
+  "99,8% pesanan yang bisa dipecah ke produk". Daftarnya bisa difilter per bulan dan diekspor,
+  jadi Anda tahu persis berkas periode mana yang perlu diunggah.
+
+Persentase kelengkapan dihitung dari **jumlah pesanan**, bukan nilainya, karena nilai settlement
+bisa negatif (pembalikan/refund) sehingga persentase berbasis nilai dapat melewati 100% dan
+membingungkan.
+
+### Uji kewajaran HPP
+
+Untuk produk yang HPP-nya **sudah** diisi, menu **HPP** menguji kewajarannya:
+
+```
+marjin laba = (dana bersih − HPP) ÷ dana bersih
+```
+
+| Status | Kondisi | Artinya |
+| --- | --- | --- |
+| Wajar | marjin ≤ 70% | tidak ada indikasi salah isi |
+| Perlu dicek | marjin di atas 70% | HPP kemungkinan terlalu kecil |
+| Sangat tidak wajar | marjin ≥ 100% | HPP nyaris nol dibanding pendapatan, hampir pasti salah |
+| Jual rugi | marjin negatif | HPP melebihi pendapatan bersih |
+
+Kedua ambang (70% dan 100%) bisa diubah langsung dari halaman. Tabelnya menampilkan
+**HPP per unit** berdampingan dengan **pendapatan bersih per unit**, sehingga salah isi angka
+langsung kelihatan.
+
+> Karena nilai 0 pada template diabaikan (lihat di bawah), HPP yang tersimpan selalu lebih besar
+> dari nol sehingga marjin tidak pernah persis 100%. Klasifikasinya memakai angka yang
+> dibulatkan ke 1 desimal — sama seperti yang ditampilkan — supaya HPP sebesar Rp 1 pada produk
+> ratusan ribu tetap tertangkap sebagai "sangat tidak wajar".
+
+### Nilai 0 pada template dianggap belum diisi
+
+Baik pada template HPP maupun beban operasional, baris yang diisi **0** diperlakukan sama dengan
+baris kosong: dilewati, tidak disimpan. Kalau 0 ikut tersimpan, produknya akan terlihat "sudah
+ada HPP" padahal labanya dihitung seolah tanpa modal — persis kesalahan yang ingin dicegah oleh
+pemantauan di atas.
 
 ### Pemantauan HPP yang belum diisi
 

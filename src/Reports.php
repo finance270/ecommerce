@@ -632,6 +632,223 @@ final class Reports
         );
     }
 
+    /**
+     * Uji kewajaran HPP untuk produk yang HPP-nya SUDAH diisi.
+     *
+     * Marjin laba = (dana bersih - HPP) / dana bersih. Marjin mendekati 100%
+     * berarti HPP nyaris nol dibanding pendapatannya - hampir pasti salah
+     * isi. Marjin negatif berarti HPP melebihi pendapatan (jual rugi).
+     * Ambang batasnya bisa diatur dari halaman.
+     */
+    public static function costMarginCheck(?string $ym, ?string $platform, float $warnPct = 70.0, float $badPct = 100.0): array
+    {
+        $w = 'settlement_date IS NOT NULL';
+        $a = [];
+        if ($ym !== null) {
+            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
+            $a[] = $ym;
+        }
+        if ($platform !== null) {
+            $w .= ' AND platform = ?';
+            $a[] = $platform;
+        }
+        $sub = self::settlementPerOrderSql($w);
+        $join = self::costJoinSql();
+
+        $rows = Db::all(
+            "SELECT st.period_ym,
+                    COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                    COALESCE(i.variation,'') AS variasi,
+                    MAX(pc.cost_per_unit) AS hpp_unit,
+                    SUM(i.qty)            AS qty,
+                    SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
+                    SUM(i.qty * pc.cost_per_unit) AS hpp
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}
+             WHERE pc.id IS NOT NULL
+             GROUP BY st.period_ym, produk, variasi
+             HAVING qty > 0",
+            $a
+        );
+
+        foreach ($rows as &$r) {
+            $bersih = (float) $r['bersih'];
+            $hpp    = (float) $r['hpp'];
+            $qty    = (int) $r['qty'];
+            $laba   = $bersih - $hpp;
+
+            $r['laba'] = $laba;
+            $r['bersih_unit'] = $qty > 0 ? $bersih / $qty : 0.0;
+            $r['marjin'] = $bersih > 0 ? $laba / $bersih * 100 : null;
+
+            // Dibandingkan pada ketelitian yang sama dengan yang ditampilkan
+            // (1 desimal). Sejak nilai 0 pada template diabaikan, HPP selalu
+            // lebih besar dari nol sehingga marjin tidak pernah persis 100%;
+            // tanpa pembulatan ini ambang 100% tidak akan pernah tercapai
+            // walau HPP-nya cuma Rp 1.
+            $m = $r['marjin'] === null ? null : round($r['marjin'], 1);
+            if ($bersih <= 0) {
+                $r['status'] = 'periksa';
+                $r['alasan'] = 'Pendapatan bersih nol atau negatif';
+            } elseif ($laba < 0) {
+                $r['status'] = 'rugi';
+                $r['alasan'] = 'HPP lebih besar dari pendapatan bersih (jual rugi)';
+            } elseif ($m >= $badPct) {
+                $r['status'] = 'parah';
+                $r['alasan'] = 'HPP nyaris nol dibanding pendapatan - hampir pasti salah isi';
+            } elseif ($m > $warnPct) {
+                $r['status'] = 'periksa';
+                $r['alasan'] = 'Marjin di atas batas wajar, HPP kemungkinan terlalu kecil';
+            } else {
+                $r['status'] = 'wajar';
+                $r['alasan'] = '';
+            }
+        }
+        unset($r);
+
+        usort($rows, static function (array $x, array $y): int {
+            $rank = ['parah' => 0, 'rugi' => 1, 'periksa' => 2, 'wajar' => 3];
+            $c = $rank[$x['status']] <=> $rank[$y['status']];
+            return $c !== 0 ? $c : ((float) $y['bersih'] <=> (float) $x['bersih']);
+        });
+
+        return $rows;
+    }
+
+    // -----------------------------------------------------------------
+    // Pemantauan kelengkapan data
+    // -----------------------------------------------------------------
+
+    /** Kapan tiap jenis berkas terakhir diunggah. */
+    public static function uploadStatus(): array
+    {
+        return Db::all(
+            "SELECT platform, dataset,
+                    COUNT(*)            AS jumlah,
+                    MAX(created_at)     AS terakhir,
+                    MAX(period_to)      AS data_sampai,
+                    MIN(period_from)    AS data_dari
+             FROM uploads
+             WHERE status IN ('success','partial')
+             GROUP BY platform, dataset
+             ORDER BY platform, dataset"
+        );
+    }
+
+    /**
+     * Kelengkapan data per bulan: pesanan, settlement, alokasi produk,
+     * HPP, dan beban operasional - untuk melihat periode mana yang belum
+     * diperbarui.
+     */
+    public static function dataMonitor(): array
+    {
+        $bulan = [];
+        $touch = static function (array &$bulan, ?string $ym): void {
+            if ($ym !== null && $ym !== '' && !isset($bulan[$ym])) {
+                $bulan[$ym] = [
+                    'ym' => $ym, 'pesanan' => 0, 'pesanan_update' => null,
+                    'settlement' => 0, 'settlement_update' => null,
+                    'settle_pesanan' => 0, 'settle_tanpa_order' => 0,
+                    'nilai_bersih' => 0.0, 'nilai_tanpa_order' => 0.0,
+                    'produk' => 0, 'produk_tanpa_hpp' => 0,
+                    'beban' => 0.0, 'beban_baris' => 0,
+                ];
+            }
+        };
+
+        foreach (Db::all(
+            "SELECT DATE_FORMAT(order_date,'%Y-%m') ym, COUNT(*) n, MAX(updated_at) upd
+             FROM orders WHERE order_date IS NOT NULL GROUP BY ym"
+        ) as $r) {
+            $touch($bulan, $r['ym']);
+            $bulan[$r['ym']]['pesanan'] = (int) $r['n'];
+            $bulan[$r['ym']]['pesanan_update'] = $r['upd'];
+        }
+
+        foreach (Db::all(
+            "SELECT DATE_FORMAT(settlement_date,'%Y-%m') ym, COUNT(*) n, MAX(updated_at) upd
+             FROM settlements WHERE settlement_date IS NOT NULL GROUP BY ym"
+        ) as $r) {
+            $touch($bulan, $r['ym']);
+            $bulan[$r['ym']]['settlement'] = (int) $r['n'];
+            $bulan[$r['ym']]['settlement_update'] = $r['upd'];
+        }
+
+        // Settlement yang berkas pesanannya belum diunggah - inilah penyebab
+        // "alokasi produk" tidak mencapai 100%.
+        foreach (Db::all(
+            "SELECT st.period_ym AS ym,
+                    COUNT(*) AS total,
+                    SUM(o.id IS NULL) AS tanpa_order,
+                    SUM(st.net_amount) AS bersih,
+                    SUM(CASE WHEN o.id IS NULL THEN st.net_amount ELSE 0 END) AS bersih_tanpa_order
+             FROM (
+                 SELECT platform, order_id,
+                        DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
+                        SUM(net_amount) AS net_amount
+                 FROM settlements WHERE settlement_date IS NOT NULL
+                 GROUP BY platform, order_id
+             ) st
+             LEFT JOIN orders o ON o.platform = st.platform AND o.order_id = st.order_id
+                               AND o.items_subtotal_before > 0
+             GROUP BY st.period_ym"
+        ) as $r) {
+            $touch($bulan, $r['ym']);
+            $bulan[$r['ym']]['settle_pesanan'] = (int) $r['total'];
+            $bulan[$r['ym']]['settle_tanpa_order'] = (int) $r['tanpa_order'];
+            $bulan[$r['ym']]['nilai_bersih'] = (float) $r['bersih'];
+            $bulan[$r['ym']]['nilai_tanpa_order'] = (float) $r['bersih_tanpa_order'];
+        }
+
+        foreach (self::costCoverageByMonth() as $r) {
+            $touch($bulan, $r['period_ym']);
+            $bulan[$r['period_ym']]['produk'] = (int) $r['produk'];
+            $bulan[$r['period_ym']]['produk_tanpa_hpp'] = (int) $r['produk_tanpa_hpp'];
+        }
+
+        foreach (Db::all(
+            'SELECT period_ym ym, SUM(amount) total, COUNT(*) n FROM operating_expense GROUP BY period_ym'
+        ) as $r) {
+            $touch($bulan, $r['ym']);
+            $bulan[$r['ym']]['beban'] = (float) $r['total'];
+            $bulan[$r['ym']]['beban_baris'] = (int) $r['n'];
+        }
+
+        krsort($bulan);
+        return array_values($bulan);
+    }
+
+    /** Rincian settlement yang belum ada data pesanannya, per bulan. */
+    public static function unmatchedSettlements(?string $ym, int $limit = 300): array
+    {
+        $w = 'settlement_date IS NOT NULL';
+        $a = [];
+        if ($ym !== null) {
+            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
+            $a[] = $ym;
+        }
+        return Db::all(
+            "SELECT st.period_ym, st.platform, st.order_id, st.net_amount
+             FROM (
+                 SELECT platform, order_id,
+                        DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
+                        SUM(net_amount) AS net_amount
+                 FROM settlements WHERE {$w}
+                 GROUP BY platform, order_id
+             ) st
+             LEFT JOIN orders o ON o.platform = st.platform AND o.order_id = st.order_id
+                               AND o.items_subtotal_before > 0
+             WHERE o.id IS NULL
+             ORDER BY st.net_amount DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
     /** Daftar HPP yang tersimpan. */
     public static function costList(?string $ym, ?string $search, int $limit = 500): array
     {

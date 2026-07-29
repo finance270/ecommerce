@@ -111,6 +111,53 @@ switch ($report) {
             ], $pnl['kategori'])
         );
 
+    case 'monitoring':
+        $rows = Reports::dataMonitor();
+        csvOut("monitoring_kelengkapan_{$stamp}.csv", [
+            'Bulan', 'Pesanan', 'Settlement', 'Pesanan Settle', 'Belum Ada Data Pesanan',
+            'Alokasi Produk %', 'Nilai Belum Teralokasi', 'Produk Terjual', 'Produk Tanpa HPP',
+            'Beban Operasional', 'Pesanan Diperbarui', 'Settlement Diperbarui',
+        ], array_map(static function (array $b): array {
+            $alok = $b['settle_pesanan'] > 0
+                ? round(($b['settle_pesanan'] - $b['settle_tanpa_order']) / $b['settle_pesanan'] * 100, 2)
+                : '';
+            return [
+                $b['ym'], $b['pesanan'], $b['settlement'], $b['settle_pesanan'],
+                $b['settle_tanpa_order'], $alok, round($b['nilai_tanpa_order'], 2),
+                $b['produk'], $b['produk_tanpa_hpp'], round($b['beban'], 2),
+                $b['pesanan_update'], $b['settlement_update'],
+            ];
+        }, $rows));
+
+    case 'unmatched':
+        $ym = q('ym');
+        if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
+            $ym = null;
+        }
+        $rows = Reports::unmatchedSettlements($ym, 100000);
+        csvOut("settlement_tanpa_data_pesanan_{$stamp}.csv",
+            ['Bulan Settle', 'Platform', 'No Pesanan', 'Dana Bersih'],
+            array_map(static fn($r) => [$r['period_ym'], $r['platform'], $r['order_id'], $r['net_amount']], $rows)
+        );
+
+    case 'cost_check':
+        $ym = q('ym');
+        if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
+            $ym = null;
+        }
+        $warn = (float) (q('warn') ?? 70);
+        $bad  = (float) (q('bad') ?? 100);
+        $rows = Reports::costMarginCheck($ym, $platform, $warn, $bad);
+        csvOut("uji_kewajaran_hpp_{$stamp}.csv", [
+            'Status', 'Bulan', 'Produk', 'Variasi', 'Qty', 'HPP per Unit',
+            'Bersih per Unit', 'Total HPP', 'Total Bersih', 'Laba', 'Marjin %', 'Catatan',
+        ], array_map(static fn($r) => [
+            $r['status'], $r['period_ym'], $r['produk'], $r['variasi'], $r['qty'],
+            round((float) $r['hpp_unit'], 2), round((float) $r['bersih_unit'], 2),
+            round((float) $r['hpp'], 2), round((float) $r['bersih'], 2), round((float) $r['laba'], 2),
+            $r['marjin'] === null ? '' : round((float) $r['marjin'], 2), $r['alasan'],
+        ], $rows));
+
     case 'missing_cost':
         $ym = q('ym');
         if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
