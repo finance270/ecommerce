@@ -810,8 +810,11 @@ final class Reports
             $bulan[$r['period_ym']]['produk_tanpa_hpp'] = (int) $r['produk_tanpa_hpp'];
         }
 
+        [$g, $ga] = self::expenseGuard();
         foreach (Db::all(
-            'SELECT period_ym ym, SUM(amount) total, COUNT(*) n FROM operating_expense GROUP BY period_ym'
+            "SELECT period_ym ym, SUM(amount) total, COUNT(*) n
+             FROM operating_expense WHERE {$g} GROUP BY period_ym",
+            $ga
         ) as $r) {
             $touch($bulan, $r['ym']);
             $bulan[$r['ym']]['beban'] = (float) $r['total'];
@@ -849,6 +852,34 @@ final class Reports
         );
     }
 
+    // -----------------------------------------------------------------
+    // Penghapusan data (khusus admin, ditegakkan di halaman pemanggil)
+    // -----------------------------------------------------------------
+
+    /** Hapus HPP: satu baris, atau seluruh baris pada satu bulan. */
+    public static function deleteCost(?int $id, ?string $ym): int
+    {
+        if ($id !== null) {
+            return Db::q('DELETE FROM product_cost WHERE id = ?', [$id])->rowCount();
+        }
+        if ($ym !== null) {
+            return Db::q('DELETE FROM product_cost WHERE period_ym = ?', [$ym])->rowCount();
+        }
+        return 0;
+    }
+
+    /** Hapus beban operasional: satu baris, atau seluruh baris pada satu bulan. */
+    public static function deleteExpense(?int $id, ?string $ym): int
+    {
+        if ($id !== null) {
+            return Db::q('DELETE FROM operating_expense WHERE id = ?', [$id])->rowCount();
+        }
+        if ($ym !== null) {
+            return Db::q('DELETE FROM operating_expense WHERE period_ym = ?', [$ym])->rowCount();
+        }
+        return 0;
+    }
+
     /** Daftar HPP yang tersimpan. */
     public static function costList(?string $ym, ?string $search, int $limit = 500): array
     {
@@ -870,26 +901,42 @@ final class Reports
         );
     }
 
+    /**
+     * Saringan baku untuk beban operasional:
+     *   - nilai 0 tidak pernah ikut (baris begitu dianggap belum diisi);
+     *   - kategori gaji disaring sesuai hak akses pengguna yang sedang masuk.
+     *
+     * @return array{0:string,1:array}
+     */
+    private static function expenseGuard(?string $access = null): array
+    {
+        $access ??= Auth::salaryAccess();
+        [$salaryWhere, $salaryArgs] = Perm::salarySqlFilter($access);
+        return ['amount <> 0 AND ' . $salaryWhere, $salaryArgs];
+    }
+
     /** Beban operasional: total per bulan dan per kategori. */
     public static function expenseByMonth(?string $from, ?string $to): array
     {
         [$w, $a] = self::periodFilter($from, $to);
+        [$g, $ga] = self::expenseGuard();
         return Db::all(
             "SELECT period_ym, SUM(amount) AS total, COUNT(*) AS baris
-             FROM operating_expense WHERE {$w}
+             FROM operating_expense WHERE {$w} AND {$g}
              GROUP BY period_ym ORDER BY period_ym DESC",
-            $a
+            array_merge($a, $ga)
         );
     }
 
     public static function expenseByCategory(?string $from, ?string $to): array
     {
         [$w, $a] = self::periodFilter($from, $to);
+        [$g, $ga] = self::expenseGuard();
         return Db::all(
             "SELECT category, SUM(amount) AS total, COUNT(*) AS baris
-             FROM operating_expense WHERE {$w}
+             FROM operating_expense WHERE {$w} AND {$g}
              GROUP BY category ORDER BY total DESC",
-            $a
+            array_merge($a, $ga)
         );
     }
 
@@ -901,17 +948,41 @@ final class Reports
             $w[] = 'period_ym = ?';
             $a[] = $ym;
         }
+        [$g, $ga] = self::expenseGuard();
         return Db::all(
-            'SELECT * FROM operating_expense WHERE ' . implode(' AND ', $w)
+            'SELECT * FROM operating_expense WHERE ' . implode(' AND ', $w) . " AND {$g}"
             . " ORDER BY period_ym DESC, category, description LIMIT {$limit}",
-            $a
+            array_merge($a, $ga)
         );
     }
 
     public static function expenseTotal(?string $from, ?string $to): float
     {
         [$w, $a] = self::periodFilter($from, $to);
-        return (float) Db::val("SELECT COALESCE(SUM(amount),0) FROM operating_expense WHERE {$w}", $a, 0);
+        [$g, $ga] = self::expenseGuard();
+        return (float) Db::val(
+            "SELECT COALESCE(SUM(amount),0) FROM operating_expense WHERE {$w} AND {$g}",
+            array_merge($a, $ga),
+            0
+        );
+    }
+
+    /** Berapa nilai beban yang disembunyikan dari pengguna ini. */
+    public static function expenseHidden(?string $from, ?string $to): array
+    {
+        $access = Auth::salaryAccess();
+        if ($access === 'all') {
+            return ['baris' => 0, 'total' => 0.0];
+        }
+        [$w, $a] = self::periodFilter($from, $to);
+        // Kebalikan dari hak akses pengguna.
+        [$g, $ga] = Perm::salarySqlFilter($access === 'only' ? 'none' : 'only');
+        $row = Db::one(
+            "SELECT COUNT(*) baris, COALESCE(SUM(amount),0) total
+             FROM operating_expense WHERE {$w} AND amount <> 0 AND {$g}",
+            array_merge($a, $ga)
+        ) ?? [];
+        return ['baris' => (int) ($row['baris'] ?? 0), 'total' => (float) ($row['total'] ?? 0)];
     }
 
     /** Filter rentang tanggal terhadap kolom period_ym ('YYYY-MM'). */

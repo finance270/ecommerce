@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
-$user = Auth::require();
+$user = Auth::requireTab('upload');
 
 @ini_set('memory_limit', '768M');
 @set_time_limit(900);

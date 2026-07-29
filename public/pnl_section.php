@@ -15,6 +15,11 @@ if (Auth::user() === null) {
     echo '<p class="muted">Sesi berakhir. <a href="login.php">Masuk lagi</a>.</p>';
     exit;
 }
+if (!Auth::can('pnl')) {
+    http_response_code(403);
+    echo '<p class="muted">Akun Anda tidak berhak membuka bagian ini.</p>';
+    exit;
+}
 
 @set_time_limit(300);
 header('Content-Type: text/html; charset=UTF-8');
@@ -39,7 +44,7 @@ if ($section === 'produk') {
         (<?= num($cover['covered_pesanan']) ?> dari <?= num($cover['total_pesanan']) ?> pesanan).
         Sisanya settlement yang <b>berkas pesanannya belum diunggah</b>, sehingga isi produknya belum diketahui.
         Unggah berkas <i>Semua Pesanan</i> / <i>Order</i> untuk periode terkait agar analisis ini lengkap.
-        <a href="monitoring.php">Lihat periode mana yang kurang &rarr;</a>
+        <?= tabLink('monitoring', 'monitoring.php', 'Lihat periode mana yang kurang &rarr;') ?>
       </div>
     <?php endif; ?>
 

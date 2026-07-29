@@ -3,20 +3,33 @@ declare(strict_types=1);
 
 final class Auth
 {
+    private static ?array $cache = null;
+    private static bool $loaded = false;
+
     public static function user(): ?array
     {
+        if (self::$loaded) {
+            return self::$cache;
+        }
+        self::$loaded = true;
+
         $id = $_SESSION['uid'] ?? null;
         if ($id === null) {
-            return null;
+            return self::$cache = null;
         }
-        static $cache = null;
-        if ($cache === null) {
-            $cache = Db::one('SELECT id, username, full_name, role FROM users WHERE id = ? AND is_active = 1', [$id]);
-            if ($cache === null) {
-                unset($_SESSION['uid']);
-            }
+
+        // Sengaja SELECT * : pada instalasi lama kolom permissions dan
+        // salary_access belum ada, dan setup.php - satu-satunya halaman yang
+        // menambahkannya - memanggil fungsi ini lebih dulu. Menyebut kolomnya
+        // secara eksplisit membuat proses pembaruan tidak akan pernah bisa
+        // dijalankan. Nilai yang belum ada ditangani lewat ?? di bawah.
+        $row = Db::one('SELECT * FROM users WHERE id = ? AND is_active = 1', [$id]);
+        if ($row === null) {
+            unset($_SESSION['uid']);
+            return self::$cache = null;
         }
-        return $cache;
+        unset($row['password_hash']);
+        return self::$cache = $row;
     }
 
     public static function require(): array
@@ -29,6 +42,94 @@ final class Auth
         return $u;
     }
 
+    /**
+     * Pastikan pengguna boleh membuka tab tertentu.
+     * Pemeriksaan dilakukan di setiap halaman, bukan hanya dengan
+     * menyembunyikan menu - menyembunyikan menu saja bukan pengamanan.
+     */
+    public static function requireTab(string $tab): array
+    {
+        $u = self::require();
+        if (!self::can($tab)) {
+            http_response_code(403);
+            require_once __DIR__ . '/../public/_layout.php';
+            render_head('Akses ditolak', '');
+            echo '<div class="alert bad"><b>Akses ditolak.</b> Akun Anda tidak diberi hak untuk '
+                . 'membuka halaman ini. Hubungi administrator bila ini keliru.</div>';
+
+            // Arahkan ke tab pertama yang boleh dibuka. Pengguna yang belum
+            // diberi hak apa pun tidak punya tujuan sama sekali, jadi tawarkan
+            // keluar - bukan tautan yang berujung di halaman ini lagi.
+            $tabs = self::allowedTabs();
+            if ($tabs !== []) {
+                [$label, $file] = Perm::TABS[$tabs[0]];
+                echo '<p><a class="btn ghost" href="' . e($file) . '">Kembali ke ' . e($label) . '</a></p>';
+            } else {
+                echo '<p class="muted">Akun Anda belum diberi hak atas satu halaman pun. '
+                    . 'Minta administrator mengatur hak akses di menu Pengguna.</p>'
+                    . '<p><a class="btn ghost" href="logout.php">Keluar</a></p>';
+            }
+            render_foot();
+            exit;
+        }
+        return $u;
+    }
+
+    public static function isAdmin(): bool
+    {
+        return (self::user()['role'] ?? '') === 'admin';
+    }
+
+    /** Daftar tab yang boleh dibuka pengguna saat ini. */
+    public static function allowedTabs(): array
+    {
+        $u = self::user();
+        if ($u === null) {
+            return [];
+        }
+        if (($u['role'] ?? '') === 'admin') {
+            return array_keys(Perm::TABS);
+        }
+
+        $raw = $u['permissions'] ?? null;
+        if ($raw === null || trim((string) $raw) === '') {
+            return [];   // belum diberi hak apa pun
+        }
+        $list = json_decode((string) $raw, true);
+        if (!is_array($list)) {
+            return [];
+        }
+        return array_values(array_intersect($list, array_keys(Perm::TABS)));
+    }
+
+    public static function can(string $tab): bool
+    {
+        if (in_array($tab, Perm::ADMIN_ONLY_TABS, true)) {
+            return self::isAdmin();
+        }
+        return in_array($tab, self::allowedTabs(), true);
+    }
+
+    /** Hanya admin yang boleh menghapus data. */
+    public static function canDelete(): bool
+    {
+        return self::isAdmin();
+    }
+
+    /** 'all' | 'only' (hanya gaji) | 'none' (tanpa gaji) */
+    public static function salaryAccess(): string
+    {
+        $u = self::user();
+        if ($u === null) {
+            return 'none';
+        }
+        if (($u['role'] ?? '') === 'admin') {
+            return 'all';
+        }
+        $a = (string) ($u['salary_access'] ?? 'all');
+        return in_array($a, ['all', 'only', 'none'], true) ? $a : 'all';
+    }
+
     public static function attempt(string $username, string $password): bool
     {
         $row = Db::one('SELECT id, password_hash FROM users WHERE username = ? AND is_active = 1', [$username]);
@@ -37,6 +138,8 @@ final class Auth
         }
         session_regenerate_id(true);
         $_SESSION['uid'] = (int) $row['id'];
+        self::$loaded = false;
+        self::$cache = null;
         Db::q('UPDATE users SET last_login_at = NOW() WHERE id = ?', [$row['id']]);
         return true;
     }
@@ -45,11 +148,8 @@ final class Auth
     {
         $_SESSION = [];
         session_destroy();
-    }
-
-    public static function isAdmin(): bool
-    {
-        return (Auth::user()['role'] ?? '') === 'admin';
+        self::$loaded = false;
+        self::$cache = null;
     }
 
     /** Token CSRF untuk form yang mengubah data. */

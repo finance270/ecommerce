@@ -10,20 +10,18 @@ function render_head(string $title, string $active = ''): void
 {
     $user = Auth::user();
     $app = e(Config::get('app_name'));
-    $nav = [
-        'index.php'          => ['Dashboard', 'dashboard'],
-        'upload.php'         => ['Upload Data', 'upload'],
-        'orders.php'         => ['Pesanan', 'orders'],
-        'products.php'       => ['Produk', 'products'],
-        'performance.php'    => ['Performa', 'performance'],
-        'pnl.php'            => ['Laba & Biaya', 'pnl'],
-        'costs.php'          => ['HPP', 'costs'],
-        'expenses.php'       => ['Beban', 'expenses'],
-        'settlements.php'    => ['Settlement', 'settlements'],
-        'reconciliation.php' => ['Rekonsiliasi', 'recon'],
-        'monitoring.php'     => ['Monitoring', 'monitoring'],
-        'uploads.php'        => ['Riwayat Upload', 'uploads'],
-    ];
+    // Menu hanya menampilkan tab yang boleh dibuka. Ini semata untuk
+    // kerapian - pengamanan sesungguhnya ada di Auth::requireTab() pada
+    // masing-masing halaman.
+    $nav = [];
+    foreach (Perm::TABS as $key => [$label, $file, $_desc]) {
+        if (Auth::can($key)) {
+            $nav[$file] = [$label, $key];
+        }
+    }
+    if (Auth::isAdmin()) {
+        $nav['users.php'] = ['Pengguna', 'users'];
+    }
     ?><!doctype html>
 <html lang="id">
 <head>
@@ -104,6 +102,16 @@ function platformBadge(string $p): string
 {
     $label = $p === 'tokopedia' ? 'Tokopedia' : ($p === 'shopee' ? 'Shopee' : $p);
     return '<span class="badge ' . e($p) . '">' . e($label) . '</span>';
+}
+
+/**
+ * Tautan ajakan ke tab lain, hanya bila pengguna memang boleh membukanya.
+ * Tanpa ini pengguna dengan hak terbatas akan disodori tautan yang berujung
+ * di halaman "Akses ditolak".
+ */
+function tabLink(string $tab, string $href, string $text): string
+{
+    return Auth::can($tab) ? '<a href="' . e($href) . '">' . $text . '</a>' : '';
 }
 
 /** Link ekspor CSV untuk laporan yang sedang dibuka. */

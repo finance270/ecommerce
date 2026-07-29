@@ -107,6 +107,10 @@ function runMigrations(PDO $pdo, string $dbName): array
          "ALTER TABLE settlements ADD COLUMN total_potongan DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER discount_seller"],
         ['order_items', 'cost_key',
          "ALTER TABLE order_items ADD COLUMN cost_key CHAR(40) NULL AFTER status_norm"],
+        ['users', 'permissions',
+         "ALTER TABLE users ADD COLUMN permissions TEXT NULL AFTER role"],
+        ['users', 'salary_access',
+         "ALTER TABLE users ADD COLUMN salary_access ENUM('all','only','none') NOT NULL DEFAULT 'all' AFTER permissions"],
     ];
 
     $done = [];
@@ -153,6 +157,24 @@ function runMigrations(PDO $pdo, string $dbName): array
         $filled = backfillCostKeys($pdo);
         if ($filled > 0) {
             $done[] = "kunci HPP untuk {$filled} kombinasi produk";
+        }
+    }
+
+    // Nilai 0 kini berarti "belum diisi" dan tidak pernah ikut dilaporkan.
+    // Baris nol yang terlanjur tersimpan pada instalasi lama dibuang supaya
+    // isi tabel sama dengan yang tampil di laporan - kalau dibiarkan, barisnya
+    // tetap ada di database tetapi tidak pernah muncul di mana pun.
+    foreach ([['operating_expense', 'amount'], ['product_cost', 'cost_per_unit']] as [$t, $col]) {
+        $tableExists = (int) ($pdo->query(
+            "SELECT COUNT(*) FROM information_schema.tables
+             WHERE table_schema = " . $pdo->quote($dbName) . " AND table_name = " . $pdo->quote($t)
+        )->fetchColumn() ?: 0);
+        if ($tableExists === 0) {
+            continue;
+        }
+        $n = $pdo->exec("DELETE FROM {$t} WHERE {$col} = 0");
+        if ($n > 0) {
+            $done[] = "{$n} baris bernilai 0 dihapus dari {$t}";
         }
     }
 
@@ -278,7 +300,20 @@ render_head('Pemasangan', '');
     <b>Berhasil.</b> Struktur database sudah dibuat<?= $hasUsers ? '' : ' dan akun admin sudah aktif' ?>.
     <?php if ($migrated !== []): ?>
       <br>Kolom baru ditambahkan: <code class="k"><?= e(implode(', ', $migrated)) ?></code>.
-      Silakan <b>unggah ulang berkas laporan penghasilan</b> agar kolom tersebut terisi.
+      <?php
+      // Kolom hak akses terisi lewat halaman Pengguna, bukan lewat unggahan.
+      // Hanya kolom data penjualan yang butuh unggah ulang.
+      $perluUnggahUlang = array_values(array_filter(
+          $migrated,
+          static fn(string $c): bool => !str_starts_with($c, 'users.')
+      ));
+      ?>
+      <?php if ($perluUnggahUlang !== []): ?>
+        Silakan <b>unggah ulang berkas laporan penghasilan</b> agar kolom tersebut terisi.
+      <?php endif; ?>
+      <?php if (count($perluUnggahUlang) !== count($migrated)): ?>
+        Hak akses tiap pengguna diatur di menu <a href="users.php">Pengguna</a>.
+      <?php endif; ?>
     <?php endif; ?>
     <a href="login.php">Lanjut ke halaman masuk</a>.
   </div>

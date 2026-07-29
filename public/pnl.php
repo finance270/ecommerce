@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
-Auth::require();
+Auth::requireTab('pnl');
 
 $range = Reports::dataRange();
 [$from, $to] = dateRange();
@@ -23,6 +23,7 @@ $tot     = Reports::bridgeTotals($bridge);
 $costSum = Reports::costSummary($from, $to, $platform);
 $beban   = Reports::expenseTotal($from, $to);
 $bebanCat = Reports::expenseByCategory($from, $to);
+$bebanTersembunyi = Reports::expenseHidden($from, $to);
 
 $prodSort = q('psort', 'bersih');
 
@@ -83,13 +84,20 @@ render_head('Laba & Biaya', 'pnl');
     <?= num($costSum['produk_tanpa_hpp']) ?> produk (<?= num($costSum['qty_tanpa_hpp']) ?> unit terjual)
     belum punya HPP pada bulan yang bersangkutan, jadi dihitung <b>HPP = 0</b> dan laba di bawah
     tampak lebih besar dari kenyataan.
-    <a href="costs.php">Lengkapi HPP &rarr;</a>
+    <?= tabLink('costs', 'costs.php', 'Lengkapi HPP &rarr;') ?>
+  </div>
+<?php endif; ?>
+<?php if ($bebanTersembunyi['baris'] > 0): ?>
+  <div class="alert info">
+    Akun Anda diatur <b><?= e(Perm::accessLabel(Auth::salaryAccess())) ?></b>, sehingga
+    <?= num($bebanTersembunyi['baris']) ?> pos beban tidak ikut dihitung di sini.
+    <b>Laba usaha di bawah belum final</b> &mdash; hubungi admin bila Anda perlu angka utuhnya.
   </div>
 <?php endif; ?>
 <?php if ($beban == 0.0): ?>
   <div class="alert info">
     Belum ada <b>beban operasional</b> tercatat untuk periode ini, jadi laba usaha masih sama
-    dengan laba kotor. <a href="expenses.php">Catat beban operasional &rarr;</a>
+    dengan laba kotor. <?= tabLink('expenses', 'expenses.php', 'Catat beban operasional &rarr;') ?>
   </div>
 <?php endif; ?>
 
@@ -325,7 +333,9 @@ render_head('Laba & Biaya', 'pnl');
 <div class="card">
   <h2>
     Beban operasional per kategori
-    <a class="btn ghost sm" href="expenses.php">Kelola beban</a>
+    <?php if (Auth::can('expenses')): ?>
+      <a class="btn ghost sm" href="expenses.php">Kelola beban</a>
+    <?php endif; ?>
   </h2>
   <div class="table-wrap">
     <table>

@@ -16,6 +16,14 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   full_name     VARCHAR(128) NULL,
   role          ENUM('admin','staff','viewer') NOT NULL DEFAULT 'staff',
+  -- Daftar tab yang boleh dibuka (JSON array). NULL/kosong = belum diberi hak.
+  -- Peran admin selalu punya seluruh akses dan mengabaikan kolom ini.
+  permissions   TEXT         NULL,
+  -- Akses kategori gaji pada menu Beban:
+  --   all  = seluruh kategori
+  --   only = HANYA kategori gaji
+  --   none = seluruh kategori KECUALI gaji
+  salary_access ENUM('all','only','none') NOT NULL DEFAULT 'all',
   is_active     TINYINT(1)   NOT NULL DEFAULT 1,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at DATETIME     NULL,

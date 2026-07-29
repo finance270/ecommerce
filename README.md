@@ -161,6 +161,7 @@ akan **0**.
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
 | **Monitoring** | Periode mana yang datanya belum diperbarui, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses |
+| **Pengguna** | *(admin saja)* Buat akun, atur tab yang boleh dibuka, dan atur hak atas data gaji |
 
 Semua laporan bisa diekspor ke **CSV** (UTF-8 + pemisah `;`, langsung rapi di Excel Indonesia).
 
@@ -281,6 +282,10 @@ baris kosong: dilewati, tidak disimpan. Kalau 0 ikut tersimpan, produknya akan t
 ada HPP" padahal labanya dihitung seolah tanpa modal — persis kesalahan yang ingin dicegah oleh
 pemantauan di atas.
 
+Aturan ini berlaku juga saat membaca data: baris bernilai 0 tidak pernah ikut dijumlahkan di
+laporan mana pun. Baris 0 yang terlanjur tersimpan sebelum aturan ini ada akan **dihapus otomatis**
+saat migrasi dijalankan, supaya isi database sama persis dengan yang tampil di laporan.
+
 ### Pemantauan HPP yang belum diisi
 
 Menu **HPP** menampilkan kelengkapan per bulan &mdash; berapa produk terjual, berapa yang belum
@@ -318,6 +323,39 @@ Ini penting agar angka tidak salah tafsir:
 
 Karena itu kedua kelompok laporan dipisah dan tidak dicampur dalam satu angka.
 
+### Hak akses pengguna
+
+Menu **Pengguna** (hanya terlihat oleh admin) mengatur tiga hal untuk tiap akun.
+
+**1. Tab mana yang boleh dibuka.** Centang tab yang boleh diakses. Tab yang tidak dicentang hilang
+dari menu **dan** halamannya menolak dibuka kalau alamatnya diketik langsung — jadi ini
+pengamanan sungguhan, bukan sekadar menyembunyikan menu. Ekspor CSV ikut aturan yang sama:
+laporan hanya bisa diunduh oleh yang boleh membuka tabnya.
+
+**2. Hak atas data gaji.** Khusus menu Beban, tiap akun dapat salah satu dari:
+
+| Pilihan | Artinya |
+| --- | --- |
+| **Semua kategori** | Melihat dan mengunggah seluruh beban, termasuk gaji |
+| **Hanya kategori gaji** | Hanya melihat dan mengunggah gaji; kategori lain tidak tampak dan ditolak saat diunggah |
+| **Tanpa kategori gaji** | Melihat dan mengunggah semua kecuali gaji; baris gaji ditolak saat diunggah |
+
+Aturan ini berlaku menyeluruh — daftar beban, rekap per kategori, total di Laba &amp; Biaya, dan
+ekspor CSV semuanya ikut tersaring, jadi angka gaji tidak bisa terbaca lewat jalur lain. Kalau ada
+beban yang disembunyikan, halaman Laba &amp; Biaya memberi tahu bahwa **laba usaha yang tampil belum
+final**, supaya tidak ada yang salah mengambil kesimpulan.
+
+Kategori dianggap gaji bila namanya memuat salah satu kata: `gaji`, `upah`, `salary`, `payroll`,
+`thr`, `tunjangan`. Karena itu beri nama kategori dengan jelas — tulis "Gaji Karyawan", bukan
+"Beban Personalia" yang tidak akan terdeteksi.
+
+**3. Menghapus data hanya untuk admin.** Pengguna biasa tetap bisa **mengunggah ulang untuk
+menimpa** data yang salah seperti sebelumnya, tetapi tombol hapus hanya muncul untuk admin — dan
+permintaan hapus dari akun non-admin ditolak di server, bukan cuma disembunyikan tombolnya.
+
+Admin terakhir tidak bisa diturunkan perannya atau dinonaktifkan, jadi aplikasi tidak akan pernah
+terkunci tanpa admin.
+
 ---
 
 ## 5. Struktur Database
@@ -331,7 +369,7 @@ Karena itu kedua kelompok laporan dipisah dan tidak dicampur dalam satu angka.
 | `withdrawals` | Penarikan dana ke rekening bank |
 | `fee_dictionary` | Pemetaan nama biaya platform → kategori akuntansi |
 | `uploads` | Riwayat setiap berkas yang diproses |
-| `users` | Pengguna aplikasi |
+| `users` | Pengguna aplikasi + hak akses (`permissions` berisi daftar tab, `salary_access` mengatur data gaji) |
 
 Nilai level-pesanan pada berkas ekspor **berulang di setiap baris SKU**. Karena itu data
 dipecah menjadi `orders` + `order_items`; kalau disimpan datar dalam satu tabel, omzet

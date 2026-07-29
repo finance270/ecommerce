@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
-Auth::require();
+Auth::requireTab('monitoring');
 @set_time_limit(300);
 
 $ym = q('ym');
@@ -134,13 +134,18 @@ render_head('Monitoring Data', 'monitoring');
             <?php if ($hppOk === null): ?><span class="muted">-</span>
             <?php elseif ($hppOk >= 100): ?><span class="badge ok">lengkap</span>
             <?php else: ?>
-              <a href="costs.php?ym=<?= e($b['ym']) ?>" class="neg"><?= number_format($hppOk, 0, ',', '.') ?>%</a>
+              <?php if (Auth::can('costs')): ?>
+                <a href="costs.php?ym=<?= e($b['ym']) ?>" class="neg"><?= number_format($hppOk, 0, ',', '.') ?>%</a>
+              <?php else: ?>
+                <span class="neg"><?= number_format($hppOk, 0, ',', '.') ?>%</span>
+              <?php endif; ?>
               <div class="muted" style="font-size:11px"><?= num($b['produk_tanpa_hpp']) ?> produk kurang</div>
             <?php endif; ?>
           </td>
           <td class="num">
             <?php if ($b['beban_baris'] > 0): ?><?= rp($b['beban']) ?>
-            <?php else: ?><a href="expenses.php" class="muted">belum diisi</a><?php endif; ?>
+            <?php elseif (Auth::can('expenses')): ?><a href="expenses.php" class="muted">belum diisi</a>
+            <?php else: ?><span class="muted">belum diisi</span><?php endif; ?>
           </td>
           <td class="nowrap muted"><?= $upd !== '' ? e(date('d/m/Y H:i', strtotime($upd))) : '-' ?></td>
         </tr>

@@ -6,6 +6,12 @@ Auth::require();
 @set_time_limit(300);
 
 $type   = q('type', 'hpp');
+if (!Auth::can($type === 'beban' ? 'expenses' : 'costs')) {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Akun Anda tidak berhak mengunduh template ini.';
+    exit;
+}
 $format = q('format', 'xlsx') === 'csv' ? 'csv' : 'xlsx';
 $ym     = q('ym');
 if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
@@ -52,20 +58,23 @@ if ($type === 'beban') {
     $notes = [
         'Template Beban Operasional. Isi satu baris untuk tiap pos beban per bulan.',
         'Periode wajib format YYYY-MM (contoh 2026-01). Jumlah diisi angka rupiah tanpa titik/koma.',
+        'Baris yang Jumlah-nya dikosongkan atau diisi 0 akan DILEWATI, tidak tersimpan.',
         'Baris keterangan ini boleh dihapus. Kolom Kategori + Keterangan menjadi penanda baris,',
         'jadi kalau berkas diunggah ulang dengan isi sama, datanya tidak dobel.',
     ];
     $bulan = $ym ?? date('Y-m');
+    // Kolom Jumlah sengaja dikosongkan, bukan diisi 0: nilai 0 diperlakukan
+    // sebagai "belum diisi" sehingga barisnya tidak akan tersimpan.
     $rows = [
-        [$bulan, 'Gaji', 'Gaji karyawan', 0],
-        [$bulan, 'Sewa', 'Sewa gudang/toko', 0],
-        [$bulan, 'Listrik & Air', '', 0],
-        [$bulan, 'Internet & Telepon', '', 0],
-        [$bulan, 'Packaging', 'Kardus, bubble wrap, lakban', 0],
-        [$bulan, 'Iklan', 'Iklan di luar platform', 0],
-        [$bulan, 'Transportasi', '', 0],
-        [$bulan, 'Penyusutan', '', 0],
-        [$bulan, 'Lainnya', '', 0],
+        [$bulan, 'Gaji', 'Gaji karyawan', null],
+        [$bulan, 'Sewa', 'Sewa gudang/toko', null],
+        [$bulan, 'Listrik & Air', '', null],
+        [$bulan, 'Internet & Telepon', '', null],
+        [$bulan, 'Packaging', 'Kardus, bubble wrap, lakban', null],
+        [$bulan, 'Iklan', 'Iklan di luar platform', null],
+        [$bulan, 'Transportasi', '', null],
+        [$bulan, 'Penyusutan', '', null],
+        [$bulan, 'Lainnya', '', null],
     ];
 
     if ($format === 'csv') {
@@ -89,7 +98,8 @@ foreach (Reports::costList($bulan, null, 100000) as $c) {
 $header = ['Periode (YYYY-MM)', 'Nama Produk', 'Variasi', 'SKU', 'HPP per Unit', 'Catatan'];
 $notes = [
     'Template HPP per produk per bulan. Daftar produk di bawah diambil dari data penjualan Anda.',
-    'Cukup isi kolom "HPP per Unit" (angka rupiah tanpa titik/koma). Baris yang dikosongkan akan dilewati.',
+    'Cukup isi kolom "HPP per Unit" (angka rupiah tanpa titik/koma).',
+    'Baris yang HPP-nya dikosongkan atau diisi 0 akan DILEWATI, tidak tersimpan.',
     'JANGAN mengubah kolom Nama Produk dan Variasi - keduanya dipakai untuk mencocokkan dengan data penjualan.',
     'Kolom SKU hanya keterangan, tidak dipakai mencocokkan. Baris keterangan ini boleh dihapus.',
 ];
@@ -107,7 +117,7 @@ foreach ($produk as $p) {
     ];
 }
 if ($rows === []) {
-    $rows[] = [$bulan, 'Contoh: Kopi Susu 1KG', 'Biji Kopi', '', 0, 'Belum ada data penjualan'];
+    $rows[] = [$bulan, 'Contoh: Kopi Susu 1KG', 'Biji Kopi', '', null, 'Belum ada data penjualan'];
 }
 
 $suffix = $ym !== null ? '_' . str_replace('-', '', $ym) : '';

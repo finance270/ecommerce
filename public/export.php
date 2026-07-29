@@ -33,6 +33,24 @@ function csvOut(string $filename, array $header, iterable $rows): never
 
 $stamp = date('Ymd_His');
 
+// Setiap laporan menempel pada tab tertentu; ekspor tidak boleh jadi jalan
+// pintas mengambil data dari tab yang tidak boleh dibuka.
+$tabLaporan = [
+    'orders' => 'orders', 'settlements' => 'settlements',
+    'fee_detail' => 'pnl', 'fee_category' => 'pnl', 'monthly_settlement' => 'pnl',
+    'product_net' => 'pnl', 'product_profit' => 'pnl',
+    'products' => 'products', 'weekly' => 'performance',
+    'unsettled' => 'recon', 'unmatched' => 'monitoring', 'monitoring' => 'monitoring',
+    'missing_cost' => 'costs', 'cost_check' => 'costs',
+    'expenses' => 'expenses',
+];
+if (!isset($tabLaporan[$report]) || !Auth::can($tabLaporan[$report])) {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Akun Anda tidak berhak mengunduh laporan ini.';
+    exit;
+}
+
 switch ($report) {
     case 'orders':
         $w = ['1=1'];

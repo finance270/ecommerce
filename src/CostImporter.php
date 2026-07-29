@@ -297,6 +297,22 @@ final class CostImporter
                 continue;
             }
 
+            // Hak akses kategori gaji juga ditegakkan saat impor, bukan hanya
+            // saat menampilkan - kalau tidak, pengguna tanpa akses gaji bisa
+            // menimpa angka gaji lewat berkas.
+            $akses = Auth::salaryAccess();
+            $isGaji = Perm::isSalaryCategory($cat);
+            if ($akses === 'none' && $isGaji) {
+                $totals['skipped']++;
+                $problems[] = "Baris {$n}: kategori \"{$cat}\" dilewati, akun Anda tidak berhak atas kategori gaji";
+                continue;
+            }
+            if ($akses === 'only' && !$isGaji) {
+                $totals['skipped']++;
+                $problems[] = "Baris {$n}: kategori \"{$cat}\" dilewati, akun Anda hanya berhak atas kategori gaji";
+                continue;
+            }
+
             $desc = $get('description') ?? '';
             $rec = [
                 'period_ym'   => $period,

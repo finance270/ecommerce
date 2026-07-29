@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
-Auth::require();
+Auth::requireTab('dashboard');
 
 $range = Reports::dataRange();
 [$from, $to] = dateRange();
@@ -38,7 +38,12 @@ render_head('Dashboard', 'dashboard');
 <h1>Dashboard</h1>
 <p class="sub">
   <?php if ($totalOrders === 0): ?>
-    Belum ada data. Mulai dengan <a href="upload.php">mengunggah berkas ekspor</a>.
+    Belum ada data.
+    <?php if (Auth::can('upload')): ?>
+      Mulai dengan <a href="upload.php">mengunggah berkas ekspor</a>.
+    <?php else: ?>
+      Hubungi admin untuk mengunggah berkas ekspor.
+    <?php endif; ?>
   <?php else: ?>
     Data pesanan <?= shortDate($range['order_from']) ?> &ndash; <?= shortDate($range['order_to']) ?>,
     data settlement <?= shortDate($range['settlement_from']) ?> &ndash; <?= shortDate($range['settlement_to']) ?>.
@@ -192,7 +197,9 @@ render_head('Dashboard', 'dashboard');
         </tbody>
       </table>
     </div>
-    <p style="margin:12px 0 0"><a href="uploads.php">Lihat semua riwayat upload &rarr;</a></p>
+    <?php if (Auth::can('uploads')): ?>
+      <p style="margin:12px 0 0"><a href="uploads.php">Lihat semua riwayat upload &rarr;</a></p>
+    <?php endif; ?>
   </div>
 </div>
 <?php render_foot(); ?>

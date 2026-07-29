@@ -3,11 +3,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
-$user = Auth::require();
+$user = Auth::requireTab('expenses');
 @set_time_limit(300);
 
 $results = [];
 $errors  = [];
+$notesOk = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Auth::checkCsrf($_POST['csrf'] ?? null)) {
@@ -43,6 +44,22 @@ if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
     $ym = null;
 }
 
+// Menghapus hanya boleh oleh admin. Pengguna lain tetap bisa memperbaiki data
+// dengan mengunggah ulang berkasnya (menimpa baris yang sama).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['act'] ?? '') === 'hapus') {
+    if (!Auth::checkCsrf($_POST['csrf'] ?? null)) {
+        $errors[] = 'Sesi kedaluwarsa.';
+    } elseif (!Auth::canDelete()) {
+        $errors[] = 'Hanya admin yang boleh menghapus data.';
+    } else {
+        $hid = (int) ($_POST['id'] ?? 0);
+        $hym = (string) ($_POST['ym'] ?? '');
+        $hym = preg_match('/^\d{4}-\d{2}$/', $hym) === 1 ? $hym : null;
+        $n = Reports::deleteExpense($hid > 0 ? $hid : null, $hid > 0 ? null : $hym);
+        $notesOk[] = $n . ' baris beban dihapus.';
+    }
+}
+
 $perBulan   = Reports::expenseByMonth(null, null);
 $perKategori = Reports::expenseByCategory(null, null);
 $list       = Reports::expenseList($ym, 500);
@@ -61,6 +78,15 @@ render_head('Beban Operasional', 'expenses');
 <?php foreach ($errors as $er): ?>
   <div class="alert bad"><?= e($er) ?></div>
 <?php endforeach; ?>
+<?php foreach ($notesOk as $n): ?>
+  <div class="alert ok"><?= e($n) ?></div>
+<?php endforeach; ?>
+<?php if (Auth::salaryAccess() !== 'all'): ?>
+  <div class="alert info">
+    Akun Anda diatur: <b><?= e(Perm::accessLabel(Auth::salaryAccess())) ?></b>.
+    Angka di halaman ini hanya mencakup kategori yang boleh Anda lihat.
+  </div>
+<?php endif; ?>
 
 <?php foreach ($results as $r): $t = $r['res']['totals']; ?>
   <div class="alert <?= $t['inserted'] > 0 || $t['updated'] > 0 ? 'ok' : 'info' ?>">
@@ -179,6 +205,14 @@ render_head('Beban Operasional', 'expenses');
   <h2>
     Rincian beban<?= $ym !== null ? ' &mdash; ' . e($ym) : '' ?>
     <a class="btn ghost sm" href="<?= e('export.php?report=expenses' . ($ym !== null ? '&ym=' . urlencode($ym) : '')) ?>">Ekspor CSV</a>
+    <?php if (Auth::canDelete() && $ym !== null): ?>
+      <form method="post" style="display:inline" onsubmit="return confirm('Hapus SELURUH beban bulan <?= e($ym) ?>? Tindakan ini tidak bisa dibatalkan.')">
+        <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
+        <input type="hidden" name="act" value="hapus">
+        <input type="hidden" name="ym" value="<?= e($ym) ?>">
+        <button class="btn ghost sm" type="submit">Hapus sebulan</button>
+      </form>
+    <?php endif; ?>
   </h2>
   <form method="get" class="filters" style="margin-bottom:12px">
     <div class="field">
@@ -193,7 +227,8 @@ render_head('Beban Operasional', 'expenses');
   </form>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Bulan</th><th>Kategori</th><th>Keterangan</th><th class="num">Jumlah</th></tr></thead>
+      <thead><tr><th>Bulan</th><th>Kategori</th><th>Keterangan</th><th class="num">Jumlah</th>
+        <?php if (Auth::canDelete()): ?><th></th><?php endif; ?></tr></thead>
       <tbody>
       <?php $tot = 0.0; foreach ($list as $x): $tot += (float) $x['amount']; ?>
         <tr>
@@ -201,12 +236,23 @@ render_head('Beban Operasional', 'expenses');
           <td><?= e($x['category']) ?></td>
           <td><?= e($x['description'] ?: '-') ?></td>
           <td class="num"><?= rp($x['amount']) ?></td>
+          <?php if (Auth::canDelete()): ?>
+            <td class="nowrap">
+              <form method="post" style="display:inline" onsubmit="return confirm('Hapus baris beban ini?')">
+                <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
+                <input type="hidden" name="act" value="hapus">
+                <input type="hidden" name="id" value="<?= (int) $x['id'] ?>">
+                <button class="btn ghost sm" type="submit">Hapus</button>
+              </form>
+            </td>
+          <?php endif; ?>
         </tr>
       <?php endforeach; ?>
-      <?php if ($list === []): ?><tr><td colspan="4" class="muted">Belum ada data.</td></tr><?php endif; ?>
+      <?php if ($list === []): ?><tr><td colspan="5" class="muted">Belum ada data.</td></tr><?php endif; ?>
       </tbody>
       <?php if ($list !== []): ?>
-      <tfoot><tr><td colspan="3">Total</td><td class="num"><?= rp($tot) ?></td></tr></tfoot>
+      <tfoot><tr><td colspan="3">Total</td><td class="num"><?= rp($tot) ?></td>
+        <?php if (Auth::canDelete()): ?><td></td><?php endif; ?></tr></tfoot>
       <?php endif; ?>
     </table>
   </div>

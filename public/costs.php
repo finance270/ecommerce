@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
-$user = Auth::require();
+$user = Auth::requireTab('costs');
 @ini_set('memory_limit', '512M');
 @set_time_limit(600);
 
@@ -36,6 +36,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($results === [] && $errors === []) {
             $errors[] = 'Tidak ada berkas yang dipilih.';
         }
+    }
+}
+
+// Menghapus hanya boleh oleh admin. Pengguna lain tetap bisa memperbaiki data
+// dengan mengunggah ulang berkasnya (menimpa baris yang sama).
+$notesOk = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['act'] ?? '') === 'hapus') {
+    if (!Auth::checkCsrf($_POST['csrf'] ?? null)) {
+        $errors[] = 'Sesi kedaluwarsa.';
+    } elseif (!Auth::canDelete()) {
+        $errors[] = 'Hanya admin yang boleh menghapus data.';
+    } else {
+        $hid = (int) ($_POST['id'] ?? 0);
+        $hym = (string) ($_POST['ym'] ?? '');
+        $hym = preg_match('/^\d{4}-\d{2}$/', $hym) === 1 ? $hym : null;
+        $n = Reports::deleteCost($hid > 0 ? $hid : null, $hid > 0 ? null : $hym);
+        $notesOk[] = $n . ' baris HPP dihapus.';
     }
 }
 
@@ -76,6 +93,9 @@ render_head('HPP Produk', 'costs');
 
 <?php foreach ($errors as $er): ?>
   <div class="alert bad"><?= e($er) ?></div>
+<?php endforeach; ?>
+<?php foreach ($notesOk as $n): ?>
+  <div class="alert ok"><?= e($n) ?></div>
 <?php endforeach; ?>
 
 <?php foreach ($results as $r): $t = $r['res']['totals']; ?>
@@ -232,7 +252,16 @@ render_head('HPP Produk', 'costs');
 </div>
 
 <div class="card">
-  <h2>HPP tersimpan<?= $ym !== null ? ' &mdash; ' . e($ym) : '' ?></h2>
+  <h2>HPP tersimpan<?= $ym !== null ? ' &mdash; ' . e($ym) : '' ?>
+    <?php if (Auth::canDelete() && $ym !== null): ?>
+      <form method="post" style="display:inline" onsubmit="return confirm('Hapus SELURUH HPP bulan <?= e($ym) ?>? Tindakan ini tidak bisa dibatalkan.')">
+        <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
+        <input type="hidden" name="act" value="hapus">
+        <input type="hidden" name="ym" value="<?= e($ym) ?>">
+        <button class="btn ghost sm" type="submit">Hapus sebulan</button>
+      </form>
+    <?php endif; ?>
+  </h2>
   <form method="get" class="filters" style="margin-bottom:12px">
     <?php if ($ym !== null): ?><input type="hidden" name="ym" value="<?= e($ym) ?>"><?php endif; ?>
     <div class="field">
@@ -243,7 +272,8 @@ render_head('HPP Produk', 'costs');
   </form>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Bulan</th><th>Produk</th><th>Variasi</th><th>SKU</th><th class="num">HPP per unit</th><th>Catatan</th></tr></thead>
+      <thead><tr><th>Bulan</th><th>Produk</th><th>Variasi</th><th>SKU</th><th class="num">HPP per unit</th><th>Catatan</th>
+        <?php if (Auth::canDelete()): ?><th></th><?php endif; ?></tr></thead>
       <tbody>
       <?php foreach ($list as $c): ?>
         <tr>
@@ -253,10 +283,20 @@ render_head('HPP Produk', 'costs');
           <td><?= e($c['sku'] ?: '-') ?></td>
           <td class="num"><?= rp($c['cost_per_unit']) ?></td>
           <td class="muted"><?= e($c['note'] ?: '') ?></td>
+          <?php if (Auth::canDelete()): ?>
+            <td class="nowrap">
+              <form method="post" style="display:inline" onsubmit="return confirm('Hapus HPP baris ini?')">
+                <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
+                <input type="hidden" name="act" value="hapus">
+                <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
+                <button class="btn ghost sm" type="submit">Hapus</button>
+              </form>
+            </td>
+          <?php endif; ?>
         </tr>
       <?php endforeach; ?>
       <?php if ($list === []): ?>
-        <tr><td colspan="6" class="muted">Belum ada HPP tersimpan. Mulai dari langkah 1 di atas.</td></tr>
+        <tr><td colspan="7" class="muted">Belum ada HPP tersimpan. Mulai dari langkah 1 di atas.</td></tr>
       <?php endif; ?>
       </tbody>
     </table>

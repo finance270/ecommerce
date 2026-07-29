@@ -13,6 +13,11 @@ if (Auth::user() === null) {
     echo '<p class="muted">Sesi berakhir. <a href="login.php">Masuk lagi</a>.</p>';
     exit;
 }
+if (!Auth::can('costs')) {
+    http_response_code(403);
+    echo '<p class="muted">Akun Anda tidak berhak membuka bagian ini.</p>';
+    exit;
+}
 
 @set_time_limit(300);
 header('Content-Type: text/html; charset=UTF-8');

@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
-Auth::require();
+Auth::requireTab('orders');
 
 $platform = (string) (q('platform') ?? '');
 $orderId  = (string) (q('id') ?? '');
