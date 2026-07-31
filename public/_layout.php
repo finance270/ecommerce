@@ -41,8 +41,12 @@ function render_head(string $title, string $active = ''): void
   </nav>
   <?php if ($user !== null): ?>
     <div class="user">
-      <?php if (Tenant::banyak()): ?>
-        <span class="badge muted" title="Perusahaan yang sedang dibuka"><?= e(Tenant::aktif()['nama']) ?></span>
+      <?php if (Tenant::banyak() || Auth::akun() !== null): ?>
+        <?php if (Auth::akun() !== null): ?>
+          <a href="pilih-perusahaan.php" title="Ganti PT"><?= e(Tenant::aktif()['nama']) ?></a>
+        <?php else: ?>
+          <span class="badge muted" title="Perusahaan yang sedang dibuka"><?= e(Tenant::aktif()['nama']) ?></span>
+        <?php endif; ?>
         &middot;
       <?php endif; ?>
       <?= e($user['full_name'] ?: $user['username']) ?> &middot; <a href="logout.php">Keluar</a>

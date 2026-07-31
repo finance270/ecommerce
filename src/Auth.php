@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 final class Auth
 {
+    /** Kunci sesi untuk identitas pusat (email), bertahan saat pindah PT. */
+    public const SESI_AKUN = 'akun';
+
     private static ?array $cache = null;
     private static bool $loaded = false;
 
@@ -15,7 +18,13 @@ final class Auth
 
         $id = $_SESSION['uid'] ?? null;
         if ($id === null) {
-            return self::$cache = null;
+            // Masuk lewat akun pusat: id pengguna di database PT ini belum
+            // ditentukan (misalnya baru berpindah PT). Ditentukan sekarang,
+            // setelah keanggotaannya di PT ini diperiksa.
+            $id = self::sambungkanAkun();
+            if ($id === null) {
+                return self::$cache = null;
+            }
         }
 
         // Sengaja SELECT * : pada instalasi lama kolom permissions dan
@@ -32,11 +41,107 @@ final class Auth
         return self::$cache = $row;
     }
 
+    /**
+     * Hubungkan akun pusat yang sedang masuk dengan barisnya di database PT
+     * yang sedang aktif.
+     *
+     * Keanggotaan diperiksa di sini, bukan hanya saat memilih PT: dengan
+     * begitu mencabut akses seseorang langsung berlaku pada permintaan
+     * berikutnya, tanpa menunggu sesinya berakhir.
+     *
+     * @return int|null id baris users, atau null bila tidak berhak
+     */
+    private static function sambungkanAkun(): ?int
+    {
+        $akunId = (int) ($_SESSION[self::SESI_AKUN] ?? 0);
+        if ($akunId <= 0 || !Pusat::tersedia()) {
+            return null;
+        }
+        $akun = Pusat::akunById($akunId);
+        if ($akun === null) {
+            unset($_SESSION[self::SESI_AKUN]);
+            return null;
+        }
+        $peran = Pusat::peran($akunId, Tenant::kodeAktif());
+        if ($peran === null) {
+            return null;   // bukan anggota PT ini
+        }
+
+        try {
+            $id = Pemasang::pastikanPengguna(
+                Db::conn(),
+                (string) $akun['email'],
+                (string) $akun['nama'],
+                $peran !== 'staf'
+            );
+        } catch (Throwable) {
+            return null;   // database PT belum terpasang
+        }
+        $_SESSION['uid'] = $id;
+        return $id;
+    }
+
+    /** Akun pusat yang sedang masuk, bila memang masuk lewat email. */
+    public static function akun(): ?array
+    {
+        $id = (int) ($_SESSION[self::SESI_AKUN] ?? 0);
+        return $id > 0 ? Pusat::akunById($id) : null;
+    }
+
+    /**
+     * Masuk dengan email lewat database pusat.
+     * Belum menentukan PT - itu dilakukan terpisah lewat masukPerusahaan().
+     */
+    public static function attemptAkun(string $email, string $password): bool
+    {
+        if (!Pusat::tersedia()) {
+            return false;
+        }
+        $akun = Pusat::akunByEmail($email);
+        if ($akun === null || !password_verify($password, (string) $akun['password_hash'])) {
+            return false;
+        }
+        $tenant = $_SESSION[Tenant::SESSION_KEY] ?? null;
+        $_SESSION = [];
+        session_regenerate_id(true);
+        if ($tenant !== null) {
+            $_SESSION[Tenant::SESSION_KEY] = $tenant;
+        }
+        $_SESSION[self::SESI_AKUN] = (int) $akun['id'];
+        self::$loaded = false;
+        self::$cache = null;
+        Pusat::catatMasuk((int) $akun['id']);
+        return true;
+    }
+
+    /**
+     * Buka satu PT untuk akun pusat yang sedang masuk.
+     * Mengembalikan false bila akun itu bukan anggota PT tersebut.
+     */
+    public static function masukPerusahaan(string $kode): bool
+    {
+        $akunId = (int) ($_SESSION[self::SESI_AKUN] ?? 0);
+        if ($akunId <= 0 || Pusat::peran($akunId, $kode) === null) {
+            return false;
+        }
+        if (!Tenant::pilih($kode)) {
+            return false;
+        }
+        unset($_SESSION['uid']);
+        self::$loaded = false;
+        self::$cache = null;
+        return self::user() !== null;
+    }
+
     public static function require(): array
     {
         $u = self::user();
         if ($u === null) {
-            header('Location: login.php');
+            // Akun pusatnya masih masuk, hanya PT ini yang tidak boleh dibuka.
+            // Menyuruh masuk ulang akan membingungkan - yang perlu dia lakukan
+            // adalah memilih PT lain.
+            $adaAkun = (int) ($_SESSION[self::SESI_AKUN] ?? 0) > 0;
+            header('Location: ' . ($adaAkun ? 'pilih-perusahaan.php' : 'login.php'));
             exit;
         }
         return $u;
@@ -148,6 +253,11 @@ final class Auth
             return false;
         }
         session_regenerate_id(true);
+        // Identitas pusat dibuang: sesi direksi hanya boleh berisi satu hal,
+        // yaitu akses baca ke PT yang tautannya dibagikan. Kalau tidak,
+        // membuka tautan direksi dari peramban yang sedang masuk sebagai
+        // pemilik akan mewariskan tombol pindah PT ke sesi itu.
+        unset($_SESSION[self::SESI_AKUN]);
         $_SESSION['uid'] = (int) $row['id'];
         self::$loaded = false;
         self::$cache = null;

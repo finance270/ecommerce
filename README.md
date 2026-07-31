@@ -71,10 +71,45 @@ user `ecommerce` dan beri hak akses penuh ke database tersebut.
 ### e. Beberapa perusahaan (opsional)
 
 Satu pemasangan bisa melayani **beberapa PT sekaligus**, masing-masing dengan
-**databasenya sendiri**. Datanya terpisah total &mdash; termasuk daftar pengguna, jadi akun dan
-kata sandi PT A tidak berlaku di PT B.
+**databasenya sendiri**. Data penjualannya terpisah total.
 
-Buat `config/tenants.json` (contohnya ada di `config/tenants.json.contoh`):
+Ada dua cara. Yang disarankan adalah **akun pusat**, karena PT baru bisa ditambahkan
+langsung dari aplikasi tanpa menyentuh berkas apa pun.
+
+#### Cara 1 &mdash; akun pusat (disarankan)
+
+Buka `daftar.php` sekali sebagai admin, lalu daftarkan satu email. Email itu menjadi
+**pemilik aplikasi**, dan PT yang sudah ada otomatis ikut terdaftar atas namanya.
+
+Setelah itu:
+
+| Keperluan | Tempatnya |
+| --- | --- |
+| Menambah PT (database dibuat otomatis) | menu **Perusahaan** &rarr; Tambah PT |
+| Menentukan siapa boleh membuka PT mana | menu **Perusahaan** &rarr; Pengguna |
+| Menentukan tab apa yang dia lihat di dalam PT | menu **Pengguna** di PT tersebut |
+| Berpindah PT | nama PT di kanan atas |
+
+Pembagiannya sengaja begitu: database pusat (`CENTRAL_DB`, default `ecom_pusat`) hanya
+menyimpan daftar akun dan daftar PT &mdash; **tidak ada data penjualan di sana**. Hak akses
+per tab tetap tersimpan di database PT masing-masing, sehingga satu orang bisa jadi admin
+penuh di PT A dan hanya melihat laba rugi di PT B, dengan satu email yang sama.
+
+Peran di halaman Perusahaan:
+
+| Peran | Artinya |
+| --- | --- |
+| `pemilik` | mengatur siapa saja yang boleh membuka PT itu |
+| `admin` | memegang seluruh tab di dalam PT itu |
+| `staf` | hanya tab yang dicentang di menu Pengguna |
+
+Menambah PT hanya bisa dilakukan akun pemilik aplikasi (email pertama). Akun lain
+dibuatkan olehnya dari halaman Perusahaan.
+
+#### Cara 2 &mdash; berkas `config/tenants.json` (cara lama)
+
+Tetap dilayani, dan masuknya memakai **username per database**. Buat
+`config/tenants.json` (contohnya ada di `config/tenants.json.contoh`):
 
 ```json
 [

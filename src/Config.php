@@ -41,6 +41,9 @@ final class Config
             'db_host'     => $get('DB_HOST', 'mariadb'),
             'db_port'     => (int) $get('DB_PORT', '3306'),
             'db_name'     => $get('DB_NAME', 'ecommerce'),
+            // Database pusat: hanya berisi daftar akun dan daftar perusahaan.
+            // Data penjualan tetap terpisah di database masing-masing PT.
+            'db_pusat'    => $get('CENTRAL_DB', 'ecom_pusat'),
             'db_user'     => $get('DB_USER', 'ecommerce'),
             'db_pass'     => $get('DB_PASS', ''),
             'app_name'    => $get('APP_NAME', 'E-Commerce Analytics'),

@@ -9,9 +9,11 @@ declare(strict_types=1);
  * berlaku di PT B - persis seperti yang dibutuhkan kalau orangnya berbeda.
  *
  * Daftarnya dibaca dari (urutan prioritas):
- *   1. berkas config/tenants.json  - paling mudah diubah lewat code-server
- *   2. environment TENANTS         - format: kode|Nama|nama_database, dipisah ';'
- *   3. bila keduanya kosong: satu perusahaan saja memakai DB_NAME yang ada,
+ *   1. database pusat              - bila sudah dipasang; di sinilah PT baru
+ *                                    ditambahkan lewat halaman Perusahaan
+ *   2. berkas config/tenants.json  - cara lama, diubah manual lewat code-server
+ *   3. environment TENANTS         - format: kode|Nama|nama_database, dipisah ';'
+ *   4. bila semuanya kosong: satu perusahaan saja memakai DB_NAME yang ada,
  *      sehingga pemasangan lama tetap jalan tanpa diubah apa pun.
  *
  * Contoh config/tenants.json:
@@ -67,6 +69,15 @@ final class Tenant
         return count(self::all()) > 1;
     }
 
+    /**
+     * Buang daftar yang tersimpan di memori.
+     * Dipanggil setelah PT baru didaftarkan supaya langsung ikut terbaca.
+     */
+    public static function lupakan(): void
+    {
+        self::$daftar = null;
+    }
+
     public static function ada(string $kode): bool
     {
         return isset(self::all()[self::normalKode($kode)]);
@@ -103,8 +114,16 @@ final class Tenant
         }
         $kode = self::normalKode($kode);
         if (($_SESSION[self::SESSION_KEY] ?? null) !== $kode) {
+            // Identitas pusat (email) sengaja dibawa: satu orang memang boleh
+            // memegang beberapa PT, jadi berpindah PT bukan berarti keluar.
+            // Yang dibuang tetap id penggunanya, karena id itu hanya berlaku
+            // di database asalnya - dan haknya di PT tujuan diperiksa ulang.
+            $akun = $_SESSION[Auth::SESI_AKUN] ?? null;
             $_SESSION = [];
             $_SESSION[self::SESSION_KEY] = $kode;
+            if ($akun !== null) {
+                $_SESSION[Auth::SESI_AKUN] = $akun;
+            }
             session_regenerate_id(true);
         }
         self::$aktif = $kode;
@@ -131,6 +150,18 @@ final class Tenant
     /** Sumber daftar perusahaan, apa adanya. */
     private static function baca(): array
     {
+        // Database pusat menang atas berkas: begitu ada, penambahan PT
+        // dilakukan lewat halaman Perusahaan, bukan dengan mengedit berkas.
+        if (Pusat::tersedia()) {
+            $out = [];
+            foreach (Pusat::semuaPerusahaan() as $p) {
+                $out[] = ['kode' => $p['kode'], 'nama' => $p['nama'], 'db' => $p['db_name']];
+            }
+            if ($out !== []) {
+                return $out;
+            }
+        }
+
         $file = dirname(__DIR__) . '/config/tenants.json';
         if (is_readable($file)) {
             $isi = json_decode((string) file_get_contents($file), true);

@@ -114,6 +114,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         . 'tidak dipakai lagi.'
                     );
                 }
+                // Baris milik akun pusat akan dibuat ulang begitu orangnya
+                // masuk lagi, jadi menghapusnya di sini hanya terasa berhasil.
+                // Yang benar adalah mencabut aksesnya di halaman Perusahaan.
+                if (Pusat::tersedia() && Pusat::akunByEmail((string) $target['username']) !== null) {
+                    throw new RuntimeException(
+                        'Pengguna ini masuk lewat akun email. Cabut aksesnya di halaman '
+                        . 'Perusahaan; di sini yang bisa diatur hanya tab yang boleh dia buka.'
+                    );
+                }
                 $adminLain = (int) Db::val(
                     "SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1 AND id <> ?",
                     [$id],

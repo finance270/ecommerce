@@ -100,35 +100,6 @@ function backfillCostKeys(PDO $pdo): int
     return count($combos);
 }
 
-/**
- * Membuat akun direksi bila belum ada.
- *
- * Dipanggil SETELAH schema.sql, bukan di dalam runMigrations(): pada
- * pemasangan baru tabel users belum ada saat migrasi kolom dijalankan,
- * sehingga akunnya tidak akan pernah terbuat.
- */
-function buatAkunDireksi(PDO $pdo): bool
-{
-    $st = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = ?');
-    $st->execute([Perm::AKUN_DIREKSI]);
-    if ((int) $st->fetchColumn() > 0) {
-        return false;
-    }
-    $ins = $pdo->prepare(
-        'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, 1)'
-    );
-    $ins->execute([
-        Perm::AKUN_DIREKSI,
-        password_hash('123', PASSWORD_DEFAULT),
-        'Direksi',
-        'viewer',
-        json_encode(['pnl']),
-        'all',
-    ]);
-    return true;
-}
-
 function runMigrations(PDO $pdo, string $dbName): array
 {
     $wanted = [
@@ -295,11 +266,6 @@ if ($dbOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Sesi tidak valid, muat ulang halaman.');
         }
 
-        $sql = file_get_contents(dirname(__DIR__) . '/database/schema.sql');
-        if ($sql === false) {
-            throw new RuntimeException('Berkas database/schema.sql tidak ditemukan.');
-        }
-
         $pdo = Db::conn();
 
         // Migrasi kolom dijalankan LEBIH DULU: schema.sql memuat CREATE OR
@@ -310,32 +276,10 @@ if ($dbOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // migrasi akan memeriksa database yang salah.
         $migrated = runMigrations($pdo, Tenant::aktif()['db']);
 
-        // Buang dulu baris komentar, baru dipecah per pernyataan. Kalau komentar
-        // tidak dibuang lebih dulu, blok komentar di atas tiap CREATE TABLE ikut
-        // terbawa dan pernyataannya justru terlewat.
-        $lines = preg_split('/\R/', $sql) ?: [];
-        $body = implode("\n", array_filter(
-            $lines,
-            static fn(string $l): bool => preg_match('/^\s*--/', $l) !== 1
-        ));
-
-        $applied = 0;
-        // Skema tidak memakai trigger/prosedur, sehingga pemisahan dengan
-        // titik koma di akhir baris aman.
-        foreach (preg_split('/;\s*\R/', $body) ?: [] as $stmt) {
-            $stmt = trim($stmt);
-            if ($stmt === '') {
-                continue;
-            }
-            $pdo->exec($stmt);
-            $applied++;
-        }
-        if ($applied === 0) {
-            throw new RuntimeException('Tidak ada pernyataan SQL yang dijalankan; periksa isi database/schema.sql.');
-        }
+        Pemasang::jalankanSkema($pdo);
 
         // Setelah tabel users pasti ada.
-        if (buatAkunDireksi($pdo)) {
+        if (Pemasang::buatAkunDireksi($pdo)) {
             $migrated[] = 'akun direksi (kata sandi awal 123, hanya tab Laba & Biaya)';
         }
 
