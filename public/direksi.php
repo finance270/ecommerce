@@ -48,13 +48,18 @@ $app = e(Config::get('app_name'));
 <main class="login-wrap">
   <div class="card">
     <h1><?= $app ?></h1>
-    <p class="sub" style="margin-bottom:18px">Akses direksi &mdash; cukup masukkan kata sandi.</p>
+    <p class="sub" style="margin-bottom:18px">
+      Akses direksi &mdash; cukup masukkan kata sandi.
+      <?php if (Tenant::banyak()): ?>
+        <br>Perusahaan: <b><?= e(Tenant::aktif()['nama']) ?></b>
+      <?php endif; ?>
+    </p>
 
     <?php if ($err !== null): ?>
       <div class="alert bad"><?= e($err) ?></div>
     <?php endif; ?>
 
-    <form method="post">
+    <form method="post" action="direksi.php?db=<?= e(Tenant::kodeAktif()) ?>">
       <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
       <div class="field">
         <label for="password">Kata sandi</label>

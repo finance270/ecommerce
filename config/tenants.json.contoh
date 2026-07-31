@@ -1,0 +1,4 @@
+[
+  { "kode": "anomali", "nama": "Anomali Coffee", "db": "ecommerce" },
+  { "kode": "ptkedua", "nama": "PT Kedua",       "db": "ecommerce_ptkedua" }
+]

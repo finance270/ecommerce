@@ -162,6 +162,45 @@ render_head('Pengguna', 'users');
 <?php foreach ($errors as $er): ?><div class="alert bad"><?= e($er) ?></div><?php endforeach; ?>
 <?php foreach ($notes as $n): ?><div class="alert ok"><?= e($n) ?></div><?php endforeach; ?>
 
+<?php
+// Tautan direksi selalu memuat kode perusahaan, jadi tiap PT punya tautannya
+// sendiri. Databasenya terpisah, sehingga kata sandi direksi PT ini tidak
+// berlaku di PT lain.
+$dir = Db::one('SELECT id, is_active FROM users WHERE username = ?', [Perm::AKUN_DIREKSI]);
+$asal = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http')
+      . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+// rtrim: dirname() mengembalikan '/' untuk berkas di akar, yang kalau
+// disambung apa adanya menghasilkan '//direksi.php'.
+$basis = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+$tautanDireksi = $asal . $basis . '/direksi.php?db=' . Tenant::kodeAktif();
+?>
+<div class="card">
+  <h2>Tautan khusus direksi<?= Tenant::banyak() ? ' &mdash; ' . e(Tenant::aktif()['nama']) : '' ?></h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:10px">
+    Bagikan tautan ini ke direksi. Pembuka tautan hanya diminta <b>kata sandi</b>, tanpa username,
+    dan hanya bisa membuka tab yang dicentang pada akun <code class="k">direksi</code> di bawah.
+    <?php if (Tenant::banyak()): ?>
+      Tautan ini <b>khusus perusahaan <?= e(Tenant::aktif()['nama']) ?></b> &mdash; tiap perusahaan
+      punya database, akun, dan kata sandi direksinya sendiri.
+    <?php endif; ?>
+  </p>
+  <input type="text" readonly onclick="this.select()" value="<?= e($tautanDireksi) ?>"
+         style="width:100%;font-family:ui-monospace,monospace;font-size:12.5px">
+  <?php if ($dir === null): ?>
+    <p class="help" style="margin-top:8px"><b class="neg">Akun direksi belum ada.</b>
+      Jalankan <a href="setup.php">pemasangan</a> sekali untuk membuatnya.</p>
+  <?php elseif ((int) $dir['is_active'] !== 1): ?>
+    <p class="help" style="margin-top:8px"><b class="neg">Akun direksi sedang nonaktif</b>,
+      jadi tautan di atas belum bisa dipakai.</p>
+  <?php else: ?>
+    <p class="help" style="margin-top:8px">
+      Ganti kata sandinya lewat baris <code class="k">direksi</code> di daftar bawah.
+      Kata sandi awal dari pemasangan adalah <code class="k">123</code> &mdash; sebaiknya diganti
+      sebelum tautannya dibagikan.
+    </p>
+  <?php endif; ?>
+</div>
+
 <div class="card">
   <h2>Daftar pengguna</h2>
   <div class="table-wrap">

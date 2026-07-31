@@ -6,17 +6,28 @@ final class Db
 {
     private static ?PDO $pdo = null;
 
+    /**
+     * Putuskan koneksi supaya permintaan berikutnya menyambung ulang.
+     * Dipakai saat berpindah perusahaan - satu proses tidak boleh memakai
+     * koneksi milik database sebelumnya.
+     */
+    public static function reset(): void
+    {
+        self::$pdo = null;
+    }
+
     public static function conn(): PDO
     {
         if (self::$pdo instanceof PDO) {
             return self::$pdo;
         }
 
+        // Database mengikuti perusahaan yang sedang aktif pada sesi ini.
         $dsn = sprintf(
             'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
             Config::get('db_host'),
             Config::get('db_port'),
-            Config::get('db_name')
+            Tenant::aktif()['db']
         );
 
         self::$pdo = new PDO($dsn, (string) Config::get('db_user'), (string) Config::get('db_pass'), [

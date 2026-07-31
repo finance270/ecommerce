@@ -46,6 +46,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h1><?= e(Config::get('app_name')) ?></h1>
     <p class="sub">Analisis penjualan Tokopedia &amp; Shopee</p>
     <?php if ($err !== null): ?><div class="alert bad"><?= e($err) ?></div><?php endif; ?>
+    <?php if (Tenant::banyak()): ?>
+      <form method="get" class="field" style="margin-bottom:14px">
+        <label for="db">Perusahaan</label>
+        <select name="db" id="db" onchange="this.form.submit()" style="width:100%">
+          <?php foreach (Tenant::all() as $t): ?>
+            <option value="<?= e($t['kode']) ?>" <?= $t['kode'] === Tenant::kodeAktif() ? 'selected' : '' ?>>
+              <?= e($t['nama']) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <noscript><button class="btn ghost sm" type="submit" style="margin-top:6px">Pilih</button></noscript>
+      </form>
+    <?php endif; ?>
+
     <form method="post">
       <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
       <div class="field">

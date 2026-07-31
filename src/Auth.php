@@ -182,8 +182,15 @@ final class Auth
 
     public static function logout(): void
     {
+        // Perusahaan yang sedang dibuka dipertahankan supaya setelah keluar
+        // pengguna mendarat di halaman masuk perusahaan yang sama.
+        $tenant = $_SESSION[Tenant::SESSION_KEY] ?? null;
         $_SESSION = [];
-        session_destroy();
+        // Id sesi tetap diganti supaya sesi lama tidak bisa dipakai ulang.
+        session_regenerate_id(true);
+        if ($tenant !== null) {
+            $_SESSION[Tenant::SESSION_KEY] = $tenant;
+        }
         self::$loaded = false;
         self::$cache = null;
     }

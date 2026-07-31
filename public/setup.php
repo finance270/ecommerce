@@ -100,6 +100,35 @@ function backfillCostKeys(PDO $pdo): int
     return count($combos);
 }
 
+/**
+ * Membuat akun direksi bila belum ada.
+ *
+ * Dipanggil SETELAH schema.sql, bukan di dalam runMigrations(): pada
+ * pemasangan baru tabel users belum ada saat migrasi kolom dijalankan,
+ * sehingga akunnya tidak akan pernah terbuat.
+ */
+function buatAkunDireksi(PDO $pdo): bool
+{
+    $st = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = ?');
+    $st->execute([Perm::AKUN_DIREKSI]);
+    if ((int) $st->fetchColumn() > 0) {
+        return false;
+    }
+    $ins = $pdo->prepare(
+        'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, 1)'
+    );
+    $ins->execute([
+        Perm::AKUN_DIREKSI,
+        password_hash('123', PASSWORD_DEFAULT),
+        'Direksi',
+        'viewer',
+        json_encode(['pnl']),
+        'all',
+    ]);
+    return true;
+}
+
 function runMigrations(PDO $pdo, string $dbName): array
 {
     $wanted = [
@@ -178,33 +207,6 @@ function runMigrations(PDO $pdo, string $dbName): array
         }
     }
 
-    // Akun direksi: pintu masuk terpisah dengan kata sandi saja. Dibuat sekali
-    // dengan kata sandi awal '123' dan hak akses hanya tab Laba & Biaya; admin
-    // bisa menggantinya kapan saja dari menu Pengguna.
-    $adaUsers = (int) ($pdo->query(
-        "SELECT COUNT(*) FROM information_schema.tables
-         WHERE table_schema = " . $pdo->quote($dbName) . " AND table_name = 'users'"
-    )->fetchColumn() ?: 0);
-    if ($adaUsers > 0 && columnExists($pdo, $dbName, 'users', 'permissions')) {
-        $st = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = ?');
-        $st->execute([Perm::AKUN_DIREKSI]);
-        if ((int) $st->fetchColumn() === 0) {
-            $ins = $pdo->prepare(
-                'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?, 1)'
-            );
-            $ins->execute([
-                Perm::AKUN_DIREKSI,
-                password_hash('123', PASSWORD_DEFAULT),
-                'Direksi',
-                'viewer',
-                json_encode(['pnl']),
-                'all',
-            ]);
-            $done[] = 'akun direksi (kata sandi awal 123, hanya tab Laba & Biaya)';
-        }
-    }
-
     // Index tambahan untuk mempercepat laporan pada instalasi lama.
     foreach ([
         ['settlements', 'idx_settlements_pf_date', 'ALTER TABLE settlements ADD INDEX idx_settlements_pf_date (platform, settlement_date)'],
@@ -243,13 +245,42 @@ $dbOk = false;
 $hasUsers = false;
 $migrated = [];
 
+$dbBaruDibuat = false;
+
 try {
     Db::conn();
     $dbOk = true;
     $hasUsers = Db::isInstalled()
         && (int) Db::val('SELECT COUNT(*) FROM users', [], 0) > 0;
 } catch (Throwable $e) {
-    $err = 'Tidak bisa terhubung ke database: ' . $e->getMessage();
+    // Database perusahaan ini belum ada: coba buat dulu. Pada pemasangan
+    // banyak perusahaan, tiap perusahaan punya database sendiri dan tidak
+    // masuk akal menyuruh admin membuatnya manual satu per satu.
+    $namaDb = Tenant::aktif()['db'];
+    try {
+        if (!Tenant::namaDbAman($namaDb)) {
+            throw new RuntimeException('Nama database tidak valid: ' . $namaDb);
+        }
+        $root = new PDO(
+            sprintf('mysql:host=%s;port=%d;charset=utf8mb4', Config::get('db_host'), Config::get('db_port')),
+            (string) Config::get('db_user'),
+            (string) Config::get('db_pass'),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $root->exec(
+            'CREATE DATABASE IF NOT EXISTS `' . $namaDb . '` '
+            . 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+        );
+        Db::reset();
+        Db::conn();
+        $dbOk = true;
+        $dbBaruDibuat = true;
+        $hasUsers = Db::isInstalled()
+            && (int) Db::val('SELECT COUNT(*) FROM users', [], 0) > 0;
+    } catch (Throwable $e2) {
+        $err = 'Tidak bisa terhubung ke database: ' . $e->getMessage()
+             . ' — dan pembuatan otomatis juga gagal: ' . $e2->getMessage();
+    }
 }
 
 if ($hasUsers && Auth::user() === null) {
@@ -274,7 +305,10 @@ if ($dbOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // Migrasi kolom dijalankan LEBIH DULU: schema.sql memuat CREATE OR
         // REPLACE VIEW yang sudah memakai kolom baru, jadi kolomnya harus ada
         // sebelum view dibuat ulang.
-        $migrated = runMigrations($pdo, (string) Config::get('db_name'));
+        // Nama database diambil dari perusahaan yang sedang aktif, bukan dari
+        // DB_NAME: pada pemasangan banyak perusahaan keduanya berbeda dan
+        // migrasi akan memeriksa database yang salah.
+        $migrated = runMigrations($pdo, Tenant::aktif()['db']);
 
         // Buang dulu baris komentar, baru dipecah per pernyataan. Kalau komentar
         // tidak dibuang lebih dulu, blok komentar di atas tiap CREATE TABLE ikut
@@ -300,6 +334,11 @@ if ($dbOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Tidak ada pernyataan SQL yang dijalankan; periksa isi database/schema.sql.');
         }
 
+        // Setelah tabel users pasti ada.
+        if (buatAkunDireksi($pdo)) {
+            $migrated[] = 'akun direksi (kata sandi awal 123, hanya tab Laba & Biaya)';
+        }
+
         if (!$hasUsers) {
             $user = trim((string) ($_POST['username'] ?? ''));
             $pass = (string) ($_POST['password'] ?? '');
@@ -321,7 +360,36 @@ if ($dbOk && $_SERVER['REQUEST_METHOD'] === 'POST') {
 render_head('Pemasangan', '');
 ?>
 <h1>Pemasangan Aplikasi</h1>
-<p class="sub">Membuat tabel database dan akun administrator pertama.</p>
+<p class="sub">
+  Membuat tabel database dan akun administrator pertama.
+  <?php if (Tenant::banyak()): ?>
+    <br>Perusahaan: <b><?= e(Tenant::aktif()['nama']) ?></b>
+    (database <code class="k"><?= e(Tenant::aktif()['db']) ?></code>)
+  <?php endif; ?>
+</p>
+
+<?php if (Tenant::banyak()): ?>
+  <form method="get" class="filters card" style="margin-bottom:16px">
+    <div class="field">
+      <label>Pasang / migrasi untuk perusahaan</label>
+      <select name="db" onchange="this.form.submit()">
+        <?php foreach (Tenant::all() as $t): ?>
+          <option value="<?= e($t['kode']) ?>" <?= $t['kode'] === Tenant::kodeAktif() ? 'selected' : '' ?>>
+            <?= e($t['nama']) ?> &mdash; <?= e($t['db']) ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+  </form>
+  <p class="help" style="margin-top:-8px;margin-bottom:16px">
+    Tiap perusahaan berdiri sendiri: jalankan pemasangan <b>sekali untuk masing-masing</b>.
+    Databasenya dibuat otomatis kalau belum ada.
+  </p>
+<?php endif; ?>
+
+<?php if ($dbBaruDibuat): ?>
+  <div class="alert ok">Database <code class="k"><?= e(Tenant::aktif()['db']) ?></code> baru dibuat.</div>
+<?php endif; ?>
 
 <?php if ($err !== null): ?>
   <div class="alert bad"><b>Gagal.</b> <?= e($err) ?></div>

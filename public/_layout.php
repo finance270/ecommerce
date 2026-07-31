@@ -40,7 +40,13 @@ function render_head(string $title, string $active = ''): void
     <?php endforeach; ?>
   </nav>
   <?php if ($user !== null): ?>
-    <div class="user"><?= e($user['full_name'] ?: $user['username']) ?> &middot; <a href="logout.php">Keluar</a></div>
+    <div class="user">
+      <?php if (Tenant::banyak()): ?>
+        <span class="badge muted" title="Perusahaan yang sedang dibuka"><?= e(Tenant::aktif()['nama']) ?></span>
+        &middot;
+      <?php endif; ?>
+      <?= e($user['full_name'] ?: $user['username']) ?> &middot; <a href="logout.php">Keluar</a>
+    </div>
   <?php endif; ?>
 </header>
 <main class="wrap">

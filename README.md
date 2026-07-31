@@ -68,7 +68,43 @@ disertakan, setelan ini sudah ada.
 Di phpMyAdmin, buat database `ecommerce` dengan collation `utf8mb4_unicode_ci`, lalu buat
 user `ecommerce` dan beri hak akses penuh ke database tersebut.
 
-### e. Jalankan pemasangan
+### e. Beberapa perusahaan (opsional)
+
+Satu pemasangan bisa melayani **beberapa PT sekaligus**, masing-masing dengan
+**databasenya sendiri**. Datanya terpisah total &mdash; termasuk daftar pengguna, jadi akun dan
+kata sandi PT A tidak berlaku di PT B.
+
+Buat `config/tenants.json` (contohnya ada di `config/tenants.json.contoh`):
+
+```json
+[
+  { "kode": "anomali", "nama": "Anomali Coffee", "db": "ecommerce" },
+  { "kode": "ptkedua", "nama": "PT Kedua",       "db": "ecommerce_ptkedua" }
+]
+```
+
+Bisa juga lewat environment: `TENANTS=anomali|Anomali Coffee|ecommerce;ptkedua|PT Kedua|ecommerce_ptkedua`.
+
+Kalau berkas dan environment-nya tidak ada, aplikasi berjalan seperti biasa dengan satu database
+dari `DB_NAME` &mdash; pemasangan lama tidak perlu diubah apa pun.
+
+Tiap perusahaan punya tautannya sendiri lewat parameter `?db=`:
+
+| Keperluan | Tautan |
+| --- | --- |
+| Masuk biasa | `.../login.php?db=ptkedua` |
+| Pemasangan / migrasi | `.../setup.php?db=ptkedua` |
+| Tautan direksi | `.../direksi.php?db=ptkedua` |
+
+Databasenya **dibuat otomatis** saat pemasangan bila belum ada, jadi cukup buka
+`setup.php?db=<kode>` sekali untuk tiap perusahaan.
+
+> Berpindah perusahaan selalu **mengosongkan sesi**: id pengguna hanya berlaku di database
+> asalnya, jadi membawanya ke database lain bisa membuat seseorang masuk sebagai orang yang
+> sama sekali berbeda. Menambahkan `?db=` pada URL saat sedang masuk akan melempar ke halaman
+> masuk perusahaan tujuan.
+
+### f. Jalankan pemasangan
 
 Buka `http://IP-SERVER:8080/setup.php`, isi username dan kata sandi administrator, klik
 **Jalankan pemasangan**. Seluruh tabel dibuat otomatis.
@@ -162,7 +198,7 @@ akan **0**.
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
 | **Monitoring** | Periode mana yang datanya belum diperbarui, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses |
-| **Pengguna** | *(admin saja)* Buat akun, atur tab yang boleh dibuka, dan atur hak atas data gaji |
+| **Pengguna** | *(admin saja)* Buat akun, atur tab yang boleh dibuka, atur hak atas data gaji, dan ambil **tautan direksi** |
 
 Semua laporan bisa diekspor ke **CSV** (UTF-8 + pemisah `;`, langsung rapi di Excel Indonesia).
 
@@ -546,7 +582,19 @@ Kategori dianggap gaji bila namanya memuat salah satu kata: `gaji`, `upah`, `sal
 `thr`, `tunjangan`. Karena itu beri nama kategori dengan jelas — tulis "Gaji Karyawan", bukan
 "Beban Personalia" yang tidak akan terdeteksi.
 
-**3. Menghapus data hanya untuk admin.** Pengguna biasa tetap bisa **mengunggah ulang untuk
+**3. Tautan khusus direksi.** Menu Pengguna menampilkan tautan `direksi.php?db=<kode>` yang bisa
+dibagikan ke direksi. Pembukanya hanya diminta **kata sandi**, tanpa username, dan hanya bisa
+membuka tab yang dicentang pada akun `direksi` &mdash; bawaannya hanya **Laba & Biaya**.
+
+Akun ini punya pengaman tersendiri: tidak bisa dipakai di halaman masuk biasa, tidak bisa
+dihapus (hanya dinonaktifkan), dan tidak bisa dijadikan admin &mdash; tautannya terbuka dengan
+kata sandi pendek, jadi tidak boleh membuka seluruh aplikasi. Kata sandi awal dari pemasangan
+adalah `123`; **ganti dulu sebelum tautannya dibagikan**.
+
+Pada pemasangan beberapa perusahaan, tautan ini **berbeda untuk tiap PT** dan kata sandinya
+tersimpan di database masing-masing, jadi sandi direksi PT A tidak berlaku di PT B.
+
+**4. Menghapus data hanya untuk admin.** Pengguna biasa tetap bisa **mengunggah ulang untuk
 menimpa** data yang salah seperti sebelumnya, tetapi tombol hapus hanya muncul untuk admin — dan
 permintaan hapus dari akun non-admin ditolak di server, bukan cuma disembunyikan tombolnya.
 

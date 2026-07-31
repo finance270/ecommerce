@@ -3,3 +3,6 @@ storage/uploads/*
 !storage/uploads/.gitkeep
 docker/
 *.log
+
+# Daftar perusahaan berisi nama database milik pemasangan setempat.
+config/tenants.json

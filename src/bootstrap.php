@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /** Titik masuk bersama untuk seluruh halaman. */
 
-foreach (['Config', 'Db', 'Value', 'XlsxReader', 'XlsxWriter', 'Profiles', 'Importer', 'CostImporter', 'Perm', 'Auth', 'Helpers', 'Tax', 'Reports'] as $class) {
+foreach (['Config', 'Db', 'Value', 'XlsxReader', 'XlsxWriter', 'Profiles', 'Importer', 'CostImporter', 'Tenant', 'Perm', 'Auth', 'Helpers', 'Tax', 'Reports'] as $class) {
     require_once __DIR__ . '/' . $class . '.php';
 }
 
@@ -19,4 +19,12 @@ if (session_status() === PHP_SESSION_NONE) {
         'samesite' => 'Lax',
     ]);
     session_start();
+}
+
+// Perusahaan aktif boleh ditentukan lewat ?db= pada tautan. Ini yang membuat
+// tiap perusahaan punya tautan masuknya sendiri - termasuk tautan direksi -
+// tanpa perlu memilih dari daftar.
+$dbPilihan = $_GET['db'] ?? null;
+if (is_string($dbPilihan) && $dbPilihan !== '') {
+    Tenant::pilih($dbPilihan);
 }
