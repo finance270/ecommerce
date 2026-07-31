@@ -58,13 +58,30 @@ $adaGitDir = is_dir($akar . '/.git');
 $adaGit = $kodeGit === 0 && str_contains(strtolower($versiGit), 'git version');
 
 $remote = $cabang = $commit = $statusKerja = '-';
+$gitPercaya = true;
+$pesanRagu = '';
 if ($adaGit && $adaGitDir) {
     $q = escapeshellarg($akar);
-    [$remote]  = jalankan("git -C {$q} remote get-url origin");
-    [$cabang]  = jalankan("git -C {$q} rev-parse --abbrev-ref HEAD");
-    [$commit]  = jalankan("git -C {$q} log -1 --pretty=format:'%h %ad %s' --date=short");
-    [$kotor]   = jalankan("git -C {$q} status --porcelain");
-    $statusKerja = $kotor === '' ? 'bersih' : substr_count($kotor, "\n") + 1 . ' berkas berubah';
+
+    // Git menolak bekerja pada repo milik pengguna lain ("dubious ownership").
+    // Di CasaOS ini hampir selalu muncul: foldernya milik root di host,
+    // sedangkan PHP di dalam container berjalan sebagai pengguna biasa.
+    // Diperiksa lebih dulu supaya pesannya jelas, bukan sekadar nilai kosong.
+    [$uji, $kodeUji] = jalankan("git -C {$q} rev-parse --is-inside-work-tree");
+    $gitPercaya = $kodeUji === 0;
+
+    if ($gitPercaya) {
+        [$remote] = jalankan("git -C {$q} remote get-url origin");
+        [$cabang] = jalankan("git -C {$q} rev-parse --abbrev-ref HEAD");
+        [$commit] = jalankan("git -C {$q} log -1 --pretty=format:'%h %ad %s' --date=short");
+        [$kotor]  = jalankan("git -C {$q} status --porcelain");
+        $statusKerja = $kotor === '' ? 'bersih' : substr_count($kotor, "\n") + 1 . ' berkas berubah';
+    } else {
+        $pesanRagu = preg_replace('/\s+/', ' ', $uji) ?? $uji;
+        if (mb_strlen($pesanRagu) > 200) {
+            $pesanRagu = mb_substr($pesanRagu, 0, 200) . '...';
+        }
+    }
 }
 
 $bisaTulis = is_writable($akar);
@@ -93,7 +110,7 @@ if (isset($_GET['uji'])) {
     }
 }
 
-$siap = $adaGitDir && $adaGit && $adaExec && $bisaTulis;
+$siap = $adaGitDir && $adaGit && $adaExec && $bisaTulis && $gitPercaya;
 
 // Alamat repo untuk perintah clone: pakai origin yang terbaca kalau memang
 // sudah clone, selain itu alamat repo aplikasi ini.
@@ -167,6 +184,14 @@ function baris(string $nama, bool $ok, string $nilai, string $saran = ''): void
         baris('Folder aplikasi bisa ditulis', $bisaTulis,
             'pemilik: ' . $pemilik . ' · proses PHP: ' . $prosesOleh,
             'Samakan pemilik folder dengan pengguna web server, atau beri izin tulis.');
+        if ($adaGit && $adaGitDir) {
+            baris('Git mau membaca folder ini', $gitPercaya,
+                $gitPercaya ? 'ya' : $pesanRagu,
+                'Git menolak repo milik pengguna lain. Tambahkan tiga variabel lingkungan '
+                . 'pada container: <code class="k">GIT_CONFIG_COUNT=1</code>, '
+                . '<code class="k">GIT_CONFIG_KEY_0=safe.directory</code>, '
+                . '<code class="k">GIT_CONFIG_VALUE_0=' . e($akar) . '</code>, lalu mulai ulang container.');
+        }
         ?>
         <tr>
           <td>Bisa menjangkau github.com</td>
