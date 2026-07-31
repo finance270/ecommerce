@@ -212,3 +212,46 @@ input:focus, select:focus { outline: 2px solid rgba(31, 111, 235, .25); border-c
 code.k { background: #eef1f6; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
 .help { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 .help li { margin-bottom: 4px; }
+
+/* ---------- cetak / simpan PDF ---------- */
+/*
+ * Yang tercetak = yang terlihat di layar. Baris rincian yang sedang ditutup
+ * memakai [hidden], jadi otomatis tidak ikut tercetak - tidak perlu aturan
+ * khusus untuk menyamakan hasil cetak dengan tampilannya.
+ */
+@media print {
+  @page { margin: 12mm; }
+
+  /* Elemen yang tidak ada gunanya di atas kertas. */
+  .topbar, .filters, .pager, .btn, .no-print, form { display: none !important; }
+
+  body { background: #fff; color: #000; font-size: 11pt; }
+  .wrap { max-width: none; margin: 0; padding: 0; }
+
+  /* Kartu dicetak rata tanpa bayangan, dan diusahakan tidak terpotong. */
+  .card {
+    box-shadow: none; border: 1px solid #bbb; margin: 0 0 10mm;
+    padding: 6mm; break-inside: avoid; page-break-inside: avoid;
+  }
+  .card h2 { font-size: 12.5pt; }
+  h1 { font-size: 16pt; margin-bottom: 2mm; }
+
+  /* Tabel: header ikut terulang kalau tabelnya melewati satu halaman. */
+  .table-wrap { overflow: visible !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  th, td { border: 1px solid #ccc; padding: 4px 6px; }
+
+  /* Warna status tetap terbaca saat dicetak hitam-putih. */
+  .neg { color: #a02020 !important; }
+  .pos { color: #106b45 !important; }
+  .muted { color: #555 !important; }
+  .kpis { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .kpi { border: 1px solid #bbb; padding: 4mm; break-inside: avoid; }
+
+  /* Judul cetak hanya muncul di atas kertas. */
+  .print-only { display: block !important; }
+  a[href]::after { content: ""; }   /* jangan cetak URL di belakang tautan */
+}
+.print-only { display: none; }

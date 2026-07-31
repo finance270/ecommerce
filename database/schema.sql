@@ -286,7 +286,10 @@ CREATE TABLE IF NOT EXISTS settlement_fees (
   UNIQUE KEY uq_fee (settlement_id, fee_code),
   KEY idx_fee_category (fee_category, settlement_date),
   KEY idx_fee_platform (platform, settlement_date),
-  KEY idx_fee_date (settlement_date, platform)
+  KEY idx_fee_date (settlement_date, platform),
+  -- Dipakai rincian biaya pada simulasi harga, yang menelusuri biaya
+  -- dari sisi pesanan sebuah produk.
+  KEY idx_fee_order (platform, order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------

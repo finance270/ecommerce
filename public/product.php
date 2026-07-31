@@ -26,11 +26,7 @@ if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
     $ym = null;
 }
 $platform = platformFilter();
-$view     = match (q('view')) {
-    'pesanan' => 'pesanan',
-    'simulasi' => 'simulasi',
-    default   => 'ringkas',
-};
+$view = q('view') === 'pesanan' ? 'pesanan' : 'ringkas';
 
 // Daftar pesanan memuat nomor pesanan dan nama pembeli - itu isi tab Pesanan,
 // jadi ikut hak akses tab tersebut, bukan hak akses HPP.
@@ -318,253 +314,14 @@ if ($view === 'ringkas'):
       Menghitung harga jual yang diperlukan untuk mencapai marjin tertentu, memakai rerata
       potongan, biaya platform, dan HPP produk ini selama 3 bulan terakhir.
     </p>
-    <a class="btn" href="<?= e($linkView(['key' => $key, 'platform' => $platform, 'view' => 'simulasi'])) ?>">
+    <a class="btn" target="_blank" rel="noopener"
+       href="simulasi.php?<?= e(http_build_query(array_filter(
+           ['key' => $key, 'platform' => $platform], static fn($v) => $v !== null && $v !== ''))) ?>">
       Buka simulasi harga &rarr;
     </a>
   </div>
 <?php endif; ?>
 
-<?php
-// ---- Simulasi penentuan harga jual ----
-if ($view === 'simulasi'):
-    $nBulan = (int) (q('n') ?? 3);
-    $nBulan = max(1, min(12, $nBulan));
-    $dasar  = Reports::pricingBasis($key, $platform, $nBulan);
-
-    $hppUnit   = $dasar['hpp_unit'];
-    $hargaUnit = $dasar['harga_unit'];
-    $bersihPct = $dasar['bersih_pct'];
-    // Sisa yang tidak tertangkap potongan/biaya (mis. penyesuaian platform).
-    $lainPct = $bersihPct === null ? null
-        : 100.0 - (float) $dasar['potongan_pct'] - (float) $dasar['biaya_pct'] - $bersihPct;
-    $siapSimulasi = $hppUnit !== null && $hppUnit > 0 && $bersihPct !== null && $bersihPct > 0;
-?>
-  <div class="card">
-    <h2>Dasar perhitungan &mdash; rerata <?= count($dasar['bulan_dipakai']) ?> bulan terakhir</h2>
-    <p class="help" style="margin-top:-4px;margin-bottom:12px">
-      <?php if ($dasar['bulan_dipakai'] !== []): ?>
-        Bulan yang dipakai: <b><?= e(implode(', ', $dasar['bulan_dipakai'])) ?></b>
-        (<?= num($dasar['qty']) ?> unit terjual).
-        Persentase dihitung dari nilai gabungan seluruh bulan itu, jadi bulan yang ramai
-        berbobot lebih besar &mdash; lebih mewakili keadaan sebenarnya daripada rerata biasa.
-      <?php else: ?>
-        Belum ada data settlement untuk produk ini.
-      <?php endif; ?>
-    </p>
-
-    <form method="get" class="filters" style="margin-bottom:14px">
-      <input type="hidden" name="key" value="<?= e($key) ?>">
-      <input type="hidden" name="view" value="simulasi">
-      <?php if ($platform !== null): ?><input type="hidden" name="platform" value="<?= e($platform) ?>"><?php endif; ?>
-      <div class="field">
-        <label>Pakai berapa bulan terakhir</label>
-        <select name="n" onchange="this.form.submit()">
-          <?php foreach ([1, 2, 3, 6, 12] as $opt): ?>
-            <option value="<?= $opt ?>" <?= $nBulan === $opt ? 'selected' : '' ?>><?= $opt ?> bulan</option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-    </form>
-
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Komponen</th><th class="num">Per unit</th><th class="num">% dari harga jual</th></tr></thead>
-        <tbody>
-          <tr>
-            <td>Harga jual kotor (rerata tercatat)</td>
-            <td class="num"><?= $hargaUnit === null ? '-' : rp($hargaUnit) ?></td>
-            <td class="num muted">100,0%</td>
-          </tr>
-          <tr>
-            <td>Potongan &amp; diskon ditanggung penjual</td>
-            <td class="num neg"><?= $dasar['qty'] > 0 ? rp(-$dasar['potongan'] / $dasar['qty']) : '-' ?></td>
-            <td class="num neg"><?= $dasar['potongan_pct'] === null ? '-' : num($dasar['potongan_pct'], 2) . '%' ?></td>
-          </tr>
-          <tr>
-            <td>Biaya platform</td>
-            <td class="num neg"><?= $dasar['qty'] > 0 ? rp(-$dasar['biaya'] / $dasar['qty']) : '-' ?></td>
-            <td class="num neg"><?= $dasar['biaya_pct'] === null ? '-' : num($dasar['biaya_pct'], 2) . '%' ?></td>
-          </tr>
-          <?php if ($lainPct !== null && abs($lainPct) >= 0.01): ?>
-          <tr>
-            <td>Penyesuaian &amp; selisih platform</td>
-            <td class="num"><?= $dasar['qty'] > 0 ? rp(-$lainPct / 100 * (float) $hargaUnit) : '-' ?></td>
-            <td class="num"><?= num(-$lainPct, 2) ?>%</td>
-          </tr>
-          <?php endif; ?>
-          <tr style="background:rgba(0,0,0,.02)">
-            <td><b>Dana diterima bersih</b></td>
-            <td class="num"><b><?= $dasar['qty'] > 0 ? rp($dasar['bersih'] / $dasar['qty']) : '-' ?></b></td>
-            <td class="num"><b><?= $bersihPct === null ? '-' : num($bersihPct, 2) . '%' ?></b></td>
-          </tr>
-          <tr>
-            <td>HPP per unit</td>
-            <td class="num neg"><?= $hppUnit === null ? '<span class="badge warn">belum ada</span>' : rp(-$hppUnit) ?></td>
-            <td class="num neg"><?= $hppUnit !== null && $hargaUnit > 0 ? num($hppUnit / $hargaUnit * 100, 2) . '%' : '-' ?></td>
-          </tr>
-          <tr style="background:rgba(0,0,0,.02)">
-            <td><b>Laba bersih sekarang</b></td>
-            <td class="num"><b><?= $dasar['qty'] > 0 ? rp(($dasar['bersih'] - $dasar['hpp']) / $dasar['qty']) : '-' ?></b></td>
-            <td class="num"><b>marjin <?= $dasar['marjin'] === null ? '-' : num($dasar['marjin'], 1) . '%' ?></b></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <?php if ($dasar['qty_tanpa_hpp'] > 0): ?>
-      <p class="help" style="margin-top:10px">
-        <?= num($dasar['qty_tanpa_hpp']) ?> dari <?= num($dasar['qty']) ?> unit pada periode ini belum
-        punya HPP. HPP per unit di atas dihitung <b>hanya dari unit yang sudah punya HPP</b>, supaya
-        reratanya tidak tertarik turun dan simulasinya tidak terlalu optimistis.
-      </p>
-    <?php endif; ?>
-  </div>
-
-  <?php if (!$siapSimulasi): ?>
-    <div class="alert warn">
-      <b>Belum bisa disimulasikan.</b>
-      <?php if ($hppUnit === null || $hppUnit <= 0): ?>
-        HPP produk ini belum diisi, padahal HPP adalah dasar perhitungan harga jual.
-        <?= tabLink('costs', 'costs.php', 'Isi HPP dulu &rarr;') ?>
-      <?php else: ?>
-        Dana diterima bersih pada periode ini nol atau negatif, sehingga porsi biaya tidak bisa dihitung.
-      <?php endif; ?>
-    </div>
-  <?php else: ?>
-    <div class="card">
-      <h2>Simulasi</h2>
-      <p class="help" style="margin-top:-4px;margin-bottom:14px">
-        Ubah <b>salah satu</b> kolom &mdash; yang lain ikut menyesuaikan. Isi harga jual untuk melihat
-        marjin yang didapat, atau isi marjin yang diinginkan untuk melihat harga jual yang diperlukan.
-      </p>
-
-      <div class="grid2" style="margin-bottom:16px">
-        <div class="field">
-          <label for="simHarga">Harga jual kotor per unit (Rp)</label>
-          <input type="number" id="simHarga" step="100" min="0" style="width:100%"
-                 value="<?= e((string) round((float) $hargaUnit)) ?>">
-        </div>
-        <div class="field">
-          <label for="simMarjin">Marjin bersih setelah HPP (%)</label>
-          <input type="number" id="simMarjin" step="0.1" max="99.9" style="width:100%"
-                 value="<?= e((string) round((float) $dasar['marjin'], 1)) ?>">
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Komponen</th><th class="num">Per unit</th><th class="num">% dari harga jual</th></tr></thead>
-          <tbody>
-            <tr><td>Harga jual kotor</td><td class="num" id="oHarga">-</td><td class="num muted">100,0%</td></tr>
-            <tr><td>Potongan &amp; diskon</td><td class="num neg" id="oPotongan">-</td>
-                <td class="num neg"><?= num($dasar['potongan_pct'], 2) ?>%</td></tr>
-            <tr><td>Biaya platform</td><td class="num neg" id="oBiaya">-</td>
-                <td class="num neg"><?= num($dasar['biaya_pct'], 2) ?>%</td></tr>
-            <tr style="background:rgba(0,0,0,.02)">
-                <td><b>Dana diterima bersih</b></td><td class="num" id="oBersih"><b>-</b></td>
-                <td class="num"><b><?= num($bersihPct, 2) ?>%</b></td></tr>
-            <tr><td>HPP per unit</td><td class="num neg"><?= rp(-$hppUnit) ?></td>
-                <td class="num neg" id="oHppPct">-</td></tr>
-            <tr style="background:rgba(0,0,0,.02)">
-                <td><b>Laba bersih per unit</b></td><td class="num" id="oLaba"><b>-</b></td>
-                <td class="num" id="oMarjin"><b>-</b></td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div id="simCatatan" class="help" style="margin-top:12px"></div>
-
-      <p class="help" style="margin-top:12px">
-        Persentase potongan dan biaya platform dianggap <b>tetap</b> mengikuti pola
-        <?= count($dasar['bulan_dipakai']) ?> bulan terakhir. Kalau harga naik, komisi dan biaya
-        ikut naik sebanding &mdash; itu sebabnya menaikkan harga tidak menaikkan marjin
-        seluruhnya. Angka ini panduan, bukan janji: harga baru bisa mengubah jumlah penjualan.
-      </p>
-    </div>
-
-    <script>
-    (function () {
-      var hpp     = <?= json_encode(round((float) $hppUnit, 2)) ?>;
-      var potPct  = <?= json_encode(round((float) $dasar['potongan_pct'], 6)) ?>;
-      var biPct   = <?= json_encode(round((float) $dasar['biaya_pct'], 6)) ?>;
-      var netPct  = <?= json_encode(round((float) $bersihPct, 6)) ?>;
-      var marjinWajarMin = <?= json_encode(Reports::MARJIN_MIN) ?>;
-      var marjinWajarMax = <?= json_encode(Reports::MARJIN_MAX) ?>;
-
-      var elHarga = document.getElementById('simHarga');
-      var elMarjin = document.getElementById('simMarjin');
-      var out = {
-        harga: document.getElementById('oHarga'), potongan: document.getElementById('oPotongan'),
-        biaya: document.getElementById('oBiaya'), bersih: document.getElementById('oBersih'),
-        hppPct: document.getElementById('oHppPct'), laba: document.getElementById('oLaba'),
-        marjin: document.getElementById('oMarjin'), catatan: document.getElementById('simCatatan')
-      };
-
-      function rp(n) {
-        var s = Math.round(Math.abs(n)).toLocaleString('id-ID');
-        return (n < 0 ? '-' : '') + 'Rp ' + s;
-      }
-      function pc(n) { return n.toFixed(1).replace('.', ',') + '%'; }
-
-      function render(harga) {
-        var bersih = harga * netPct / 100;
-        var laba   = bersih - hpp;
-        var marjin = bersih > 0 ? laba / bersih * 100 : null;
-
-        out.harga.textContent    = rp(harga);
-        out.potongan.textContent = rp(-harga * potPct / 100);
-        out.biaya.textContent    = rp(-harga * biPct / 100);
-        out.bersih.innerHTML     = '<b>' + rp(bersih) + '</b>';
-        out.hppPct.textContent   = harga > 0 ? pc(-hpp / harga * 100) : '-';
-        out.laba.innerHTML       = '<b>' + rp(laba) + '</b>';
-        out.laba.className       = 'num ' + (laba < 0 ? 'neg' : 'pos');
-        out.marjin.innerHTML     = '<b>' + (marjin === null ? '-' : pc(marjin)) + '</b>';
-        out.marjin.className     = 'num ' + (marjin === null ? '' : (marjin < 0 ? 'neg' : 'pos'));
-
-        var pesan = '';
-        if (marjin === null) {
-          pesan = 'Harga jual belum diisi.';
-        } else if (marjin < 0) {
-          pesan = '<b class="neg">Jual rugi.</b> Dengan harga ini HPP masih lebih besar dari dana yang diterima.';
-        } else if (marjin < marjinWajarMin) {
-          pesan = 'Marjin <b>' + pc(marjin) + '</b> masih di bawah rentang wajar ('
-                + marjinWajarMin + '&ndash;' + marjinWajarMax + '%).';
-        } else if (marjin > marjinWajarMax) {
-          pesan = 'Marjin <b>' + pc(marjin) + '</b> di atas rentang wajar ('
-                + marjinWajarMin + '&ndash;' + marjinWajarMax + '%) &mdash; enak, tapi pastikan HPP-nya sudah lengkap.';
-        } else {
-          pesan = 'Marjin <b>' + pc(marjin) + '</b> berada di rentang wajar ('
-                + marjinWajarMin + '&ndash;' + marjinWajarMax + '%).';
-        }
-        out.catatan.innerHTML = pesan;
-      }
-
-      function dariHarga() {
-        var harga = parseFloat(elHarga.value);
-        if (!isFinite(harga) || harga <= 0) { return; }
-        var bersih = harga * netPct / 100;
-        var marjin = bersih > 0 ? (bersih - hpp) / bersih * 100 : 0;
-        elMarjin.value = marjin.toFixed(1);
-        render(harga);
-      }
-
-      function dariMarjin() {
-        var m = parseFloat(elMarjin.value);
-        if (!isFinite(m) || m >= 100) { return; }
-        // bersih = hpp / (1 - m/100), lalu harga = bersih / (netPct/100)
-        var bersih = hpp / (1 - m / 100);
-        var harga  = bersih * 100 / netPct;
-        if (!isFinite(harga) || harga <= 0) { return; }
-        elHarga.value = Math.ceil(harga / 100) * 100;   // dibulatkan ke atas per Rp 100
-        render(parseFloat(elHarga.value));
-      }
-
-      elHarga.addEventListener('input', dariHarga);
-      elMarjin.addEventListener('input', dariMarjin);
-      dariHarga();
-    })();
-    </script>
-  <?php endif; ?>
-<?php endif; ?>
 
 <?php
 // ---- Daftar pesanan yang memuat produk ini ----
@@ -572,11 +329,6 @@ if (!$bolehPesanan) {
     echo '<div class="card"><h2>Daftar pesanan</h2>'
        . '<p class="muted">Akun Anda tidak diberi hak membuka tab Pesanan, jadi daftar pesanan '
        . 'untuk produk ini tidak ditampilkan.</p></div>';
-    render_foot();
-    exit;
-}
-
-if ($view === 'simulasi') {
     render_foot();
     exit;
 }

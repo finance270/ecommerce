@@ -187,6 +187,9 @@ function runMigrations(PDO $pdo, string $dbName): array
         ['orders', 'idx_orders_alloc', 'ALTER TABLE orders ADD INDEX idx_orders_alloc (platform, order_id, items_subtotal_before)'],
         // Dipakai halaman rincian produk, yang menyaring baris item per kunci HPP.
         ['order_items', 'idx_items_cost_key', 'ALTER TABLE order_items ADD INDEX idx_items_cost_key (cost_key)'],
+        // Dipakai rincian biaya pada simulasi harga: tanpa ini seluruh tabel
+        // biaya (ratusan ribu baris) harus dipindai untuk tiap produk.
+        ['settlement_fees', 'idx_fee_order', 'ALTER TABLE settlement_fees ADD INDEX idx_fee_order (platform, order_id)'],
     ] as [$t, $idx, $sql]) {
         $has = (int) ($pdo->query(
             "SELECT COUNT(*) FROM information_schema.statistics

@@ -903,63 +903,99 @@ final class Reports
     }
 
     /**
-     * Bahan simulasi harga jual: rerata perilaku produk selama N bulan terakhir.
+     * Rentang bulan untuk simulasi harga: N bulan terakhir yang ada datanya.
      *
-     * Yang dicari adalah pola yang stabil, bukan angka satu bulan:
-     *   - berapa persen dari harga jual yang hilang jadi potongan/diskon,
-     *   - berapa persen yang hilang jadi biaya platform,
-     *   - berapa HPP per unitnya.
-     *
-     * Ketiganya dihitung dari nilai gabungan seluruh bulan yang dipakai
-     * (bukan rerata dari rerata bulanan), sehingga bulan yang ramai punya
-     * bobot lebih besar - itu yang lebih mewakili keadaan sebenarnya.
-     *
-     * Bulan diambil dari bulan settlement TERAKHIR yang ada datanya untuk
+     * Dihitung mundur dari bulan settlement TERAKHIR yang ada datanya untuk
      * produk ini, bukan dari tanggal hari ini, supaya simulasi tetap berguna
      * saat berkas terakhir diunggah beberapa waktu lalu.
+     *
+     * Dikembalikan sebagai TANGGAL nyata, bukan 'YYYY-MM': membandingkan
+     * DATE_FORMAT(settlement_date,'%Y-%m') membuat index tanggal tidak
+     * terpakai sehingga seluruh tabel harus dipindai.
+     *
+     * @return array{0:?string,1:?string} [tanggal mulai, tanggal akhir]
      */
-    public static function pricingBasis(string $costKey, ?string $platform, int $bulan = 3): array
+    private static function pricingRange(string $costKey, ?string $platform, int $bulan): array
     {
-        $bulan = max(1, min(24, $bulan));
-
-        // Bulan terakhir yang ada settlement-nya untuk produk ini.
-        [$w0, $a0] = self::productWhere(null, $platform);
-        $sub0 = self::settlementPerOrderSql($w0);
-        $a0[] = $costKey;
+        [$w, $a] = self::productWhere(null, $platform);
+        $sub = self::settlementPerOrderSql($w);
+        $a[] = $costKey;
         $akhir = Db::val(
             "SELECT MAX(st.period_ym)
-             FROM ({$sub0}) st
+             FROM ({$sub}) st
              STRAIGHT_JOIN orders o
                  ON o.platform = st.platform AND o.order_id = st.order_id
                 AND o.items_subtotal_before > 0
              STRAIGHT_JOIN order_items i ON i.order_pk = o.id
              WHERE i.cost_key = ?",
-            $a0
+            $a
         );
         if ($akhir === null || $akhir === '') {
-            return ['bulan_dipakai' => [], 'qty' => 0, 'kotor' => 0.0, 'potongan' => 0.0,
-                    'biaya' => 0.0, 'bersih' => 0.0, 'hpp' => 0.0, 'hpp_unit' => null,
-                    'harga_unit' => null, 'potongan_pct' => null, 'biaya_pct' => null,
-                    'bersih_pct' => null, 'marjin' => null, 'qty_tanpa_hpp' => 0];
+            return [null, null];
+        }
+        $awalBulan = (string) $akhir . '-01';
+        return [
+            date('Y-m-01', strtotime($awalBulan . ' -' . ($bulan - 1) . ' months')),
+            date('Y-m-t', strtotime($awalBulan)),
+        ];
+    }
+
+    /**
+     * Bahan simulasi harga jual: rerata perilaku produk selama N bulan terakhir.
+     *
+     * PENTING - dasar hitungnya adalah HARGA JUAL TERDAFTAR, yaitu
+     * `subtotal_before_disc` pada baris produk, bukan pendapatan kotor hasil
+     * settlement. Keduanya berbeda kalau ada pengembalian dana: pendapatan
+     * kotor di laporan sudah dikurangi refund, sehingga kalau dipakai di sini
+     * harga yang muncul lebih rendah daripada harga yang benar-benar dipasang
+     * di Tokopedia/Shopee - dan simulasinya jadi membingungkan.
+     *
+     * Yang dicari adalah pola yang stabil, bukan angka satu bulan: berapa
+     * persen dari harga jual yang hilang jadi pengembalian, potongan, dan
+     * biaya platform, serta berapa HPP per unitnya. Semuanya dihitung dari
+     * nilai gabungan seluruh bulan yang dipakai (bukan rerata dari rerata
+     * bulanan), sehingga bulan yang ramai punya bobot lebih besar.
+     */
+    public static function pricingBasis(string $costKey, ?string $platform, int $bulan = 3): array
+    {
+        $bulan = max(1, min(24, $bulan));
+        [$mulai, $akhir] = self::pricingRange($costKey, $platform, $bulan);
+
+        $kosong = ['bulan_dipakai' => [], 'qty' => 0, 'harga' => 0.0, 'refund' => 0.0,
+                   'potongan' => 0.0, 'biaya' => 0.0, 'lain' => 0.0, 'bersih' => 0.0,
+                   'hpp' => 0.0, 'hpp_unit' => null, 'harga_unit' => null,
+                   'refund_pct' => null, 'potongan_pct' => null, 'biaya_pct' => null,
+                   'lain_pct' => null, 'bersih_pct' => null, 'marjin' => null,
+                   'qty_tanpa_hpp' => 0];
+        if ($mulai === null) {
+            return $kosong;
         }
 
-        $mulai = date('Y-m', strtotime((string) $akhir . '-01 -' . ($bulan - 1) . ' months'));
-
-        $w = 'settlement_date IS NOT NULL'
-           . " AND DATE_FORMAT(settlement_date,'%Y-%m') BETWEEN ? AND ?";
-        $a = [$mulai, (string) $akhir];
+        $w = 'settlement_date BETWEEN ? AND ?';
+        $a = [$mulai, $akhir];
         if ($platform !== null) {
             $w .= ' AND platform = ?';
             $a[] = $platform;
         }
-        $sub  = self::settlementPerOrderSql($w);
+        // Refund sengaja dipisah lagi di sini (sub-query baku sudah
+        // menggabungkannya ke gross) supaya bisa tampil sebagai baris sendiri.
+        $sub = "SELECT platform, order_id,
+                       DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
+                       SUM(refund_amount)  AS refund_amount,
+                       SUM(total_potongan) AS total_potongan,
+                       SUM(total_fee)      AS total_fee,
+                       SUM(net_amount)     AS net_amount
+                FROM settlements
+                WHERE {$w}
+                GROUP BY platform, order_id";
         $join = self::costJoinSql();
         $a[]  = $costKey;
 
         $row = Db::one(
             "SELECT GROUP_CONCAT(DISTINCT st.period_ym ORDER BY st.period_ym) AS bulan_dipakai,
-                    SUM(i.qty)          AS qty,
-                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
+                    SUM(i.qty)                  AS qty,
+                    SUM(i.subtotal_before_disc) AS harga,
+                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS refund,
                     SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
                     SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
@@ -976,11 +1012,21 @@ final class Reports
         ) ?? [];
 
         $qty      = (int) ($row['qty'] ?? 0);
-        $kotor    = (float) ($row['kotor'] ?? 0);
+        $harga    = (float) ($row['harga'] ?? 0);
+        $refund   = abs((float) ($row['refund'] ?? 0));
         $potongan = abs((float) ($row['potongan'] ?? 0));
         $biaya    = abs((float) ($row['biaya'] ?? 0));
         $bersih   = (float) ($row['bersih'] ?? 0);
         $hpp      = (float) ($row['hpp'] ?? 0);
+        if ($qty === 0 || $harga <= 0) {
+            return $kosong;
+        }
+
+        // Sisa yang tidak tertangkap ketiga komponen di atas: penyesuaian
+        // platform dan selisih pencatatan. Ditampilkan apa adanya supaya
+        // rantainya selalu bertemu, tidak ada angka yang "hilang".
+        $lain = $harga - $refund - $potongan - $biaya - $bersih;
+
         // HPP per unit dihitung hanya dari unit yang benar-benar punya HPP;
         // kalau dibagi seluruh qty, unit tanpa HPP akan menyeret reratanya
         // turun dan simulasi jadi terlalu optimistis.
@@ -991,18 +1037,89 @@ final class Reports
                 ? explode(',', (string) $row['bulan_dipakai']) : [],
             'qty'           => $qty,
             'qty_tanpa_hpp' => (int) ($row['qty_tanpa_hpp'] ?? 0),
-            'kotor'         => $kotor,
+            'harga'         => $harga,
+            'refund'        => $refund,
             'potongan'      => $potongan,
             'biaya'         => $biaya,
+            'lain'          => $lain,
             'bersih'        => $bersih,
             'hpp'           => $hpp,
             'hpp_unit'      => $qtyBerHpp > 0 ? $hpp / $qtyBerHpp : null,
-            'harga_unit'    => $qty > 0 ? $kotor / $qty : null,
-            'potongan_pct'  => $kotor > 0 ? $potongan / $kotor * 100 : null,
-            'biaya_pct'     => $kotor > 0 ? $biaya / $kotor * 100 : null,
-            'bersih_pct'    => $kotor > 0 ? $bersih / $kotor * 100 : null,
+            'harga_unit'    => $harga / $qty,
+            'refund_pct'    => $refund / $harga * 100,
+            'potongan_pct'  => $potongan / $harga * 100,
+            'biaya_pct'     => $biaya / $harga * 100,
+            'lain_pct'      => $lain / $harga * 100,
+            'bersih_pct'    => $bersih / $harga * 100,
             'marjin'        => $bersih > 0 ? ($bersih - $hpp) / $bersih * 100 : null,
         ];
+    }
+
+    /**
+     * Rincian potongan & biaya platform untuk simulasi harga, per nama asli
+     * komponen sebagaimana tertulis di berkas platform.
+     *
+     * Dialokasikan ke produk dengan porsi yang sama seperti nilai lainnya,
+     * jadi jumlah tiap kelompok pasti sama dengan baris ringkasannya.
+     *
+     * @return array{potongan:list<array>,biaya:list<array>}
+     */
+    public static function pricingBreakdown(string $costKey, ?string $platform, int $bulan = 3): array
+    {
+        $bulan = max(1, min(24, $bulan));
+        [$mulai, $akhir] = self::pricingRange($costKey, $platform, $bulan);
+        if ($mulai === null) {
+            return ['potongan' => [], 'biaya' => []];
+        }
+
+        // Parameter disusun mengikuti urutan kemunculan '?' pada SQL:
+        // cost_key ada di klausa JOIN, jadi ia yang pertama.
+        $a = [$costKey, $mulai, $akhir];
+        $wPlatform = '';
+        if ($platform !== null) {
+            $wPlatform = ' AND sf.platform = ?';
+            $a[] = $platform;
+        }
+
+        // Kategori 'total', 'informasi', dan 'rincian' adalah kolom ringkasan
+        // milik platform, bukan komponen tersendiri - kalau ikut dijumlah,
+        // nilainya dihitung dua kali. 'refund' dan 'penyesuaian' sudah punya
+        // barisnya sendiri di rantai nilai.
+        // Digiring dari sisi produk: order_items disaring lebih dulu lewat
+        // idx_items_cost_key (segelintir baris), baru menjangkau biayanya.
+        // Kalau digiring dari settlement_fees, seluruh tabel biaya terpindai.
+        $rows = Db::all(
+            "SELECT sf.fee_category, sf.fee_label,
+                    SUM(sf.amount * i.subtotal_before_disc / o.items_subtotal_before) AS nilai
+             FROM order_items i
+             STRAIGHT_JOIN orders o ON o.id = i.order_pk AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN settlement_fees sf
+                 ON sf.platform = o.platform AND sf.order_id = o.order_id
+             WHERE i.cost_key = ?
+               AND sf.settlement_date BETWEEN ? AND ?
+               {$wPlatform}
+               AND sf.fee_category NOT IN ('total','informasi','rincian','refund','penyesuaian')
+             GROUP BY sf.fee_category, sf.fee_label
+             HAVING nilai <> 0
+             ORDER BY nilai",
+            $a
+        );
+
+        // Tanda nilai DIPERTAHANKAN. Sebagian komponen ongkir saling meniadakan
+        // - ada yang ditalangi penjual (biaya) dan ada yang diganti platform
+        // atau dibayar pembeli (pemasukan). Kalau semuanya dimutlakkan, rincian
+        // membengkak hampir dua kali lipat dan tidak lagi sama dengan total
+        // biaya pada baris ringkasannya.
+        $out = ['potongan' => [], 'biaya' => []];
+        foreach ($rows as $r) {
+            $kel = $r['fee_category'] === 'potongan' ? 'potongan' : 'biaya';
+            $out[$kel][] = [
+                'kategori' => (string) $r['fee_category'],
+                'label'    => (string) $r['fee_label'],
+                'nilai'    => (float) $r['nilai'],
+            ];
+        }
+        return $out;
     }
 
     /** Daftar pesanan yang memuat produk ini, lengkap dengan nilai alokasinya. */

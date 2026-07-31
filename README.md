@@ -337,23 +337,39 @@ bisa melihat ringkasan dan pecahannya, tetapi tidak daftar pesanannya.
 
 ### Simulasi harga jual
 
-Produk yang marjinnya di luar rentang wajar punya tombol **Simulasi harga**. Halaman ini menjawab
-satu pertanyaan: *berapa harga jual yang diperlukan supaya marjin bersih setelah HPP sesuai target?*
+Produk yang marjinnya di luar rentang wajar punya tombol **Simulasi harga**, yang membuka
+**tab baru** berisi halaman tersendiri (`simulasi.php`) — terpisah supaya bisa dipakai fokus dan
+dicetak apa adanya. Halaman ini menjawab satu pertanyaan: *berapa harga jual yang diperlukan
+supaya marjin bersih setelah HPP sesuai target?*
 
-Dasarnya diambil dari **rerata 3 bulan terakhir** produk tersebut (bisa diubah 1–12 bulan):
+Dasar hitungnya adalah **harga jual terdaftar**, yaitu `subtotal_before_disc` pada baris produk —
+harga yang benar-benar Anda pasang di Tokopedia/Shopee. Ini **bukan** pendapatan kotor hasil
+settlement: pendapatan kotor di laporan sudah dikurangi pengembalian dana, jadi kalau dipakai
+di sini harga yang muncul akan lebih rendah daripada harga di etalase.
 
-| Komponen | Cara dihitung |
-| --- | --- |
-| Potongan & diskon | % dari harga jual, rerata periode |
-| Biaya platform | % dari harga jual, rerata periode |
-| Dana diterima bersih | % dari harga jual, rerata periode |
-| HPP per unit | rerata periode |
+Rantai nilainya, semua diukur terhadap harga jual dan diambil dari **rerata 3 bulan terakhir**
+produk tersebut (bisa diubah 1–12 bulan, dan bisa disaring per platform):
+
+```
+  harga jual terdaftar        100%
+- pengembalian dana (refund)
+- potongan & diskon           ← bisa dibuka rinciannya
+- biaya platform              ← bisa dibuka rinciannya
+± penyesuaian & selisih
+= dana diterima bersih
+- HPP per unit
+= laba bersih  →  marjin
+```
+
+**Rincian potongan dan biaya platform** bisa dibuka per komponen dengan nama asli dari berkas
+platform (biaya komisi, biaya layanan, biaya administrasi, ongkir, dan seterusnya). Tanda nilainya
+dipertahankan: sebagian komponen ongkir justru **menambah** (diganti platform atau dibayar
+pembeli), sehingga jumlah rinciannya selalu sama persis dengan baris ringkasannya.
 
 Persentasenya dihitung dari **nilai gabungan** seluruh bulan yang dipakai, bukan rerata dari
-rerata bulanan — sehingga bulan yang ramai berbobot lebih besar dan hasilnya lebih mewakili
-keadaan sebenarnya. Bulan dihitung mundur dari **bulan settlement terakhir yang ada datanya**,
-bukan dari tanggal hari ini, supaya simulasi tetap berguna kalau berkas terakhir diunggah
-beberapa waktu lalu.
+rerata bulanan — sehingga bulan yang ramai berbobot lebih besar. Bulan dihitung mundur dari
+**bulan settlement terakhir yang ada datanya**, bukan dari tanggal hari ini, supaya simulasi
+tetap berguna kalau berkas terakhir diunggah beberapa waktu lalu.
 
 Dua kolom bisa diubah dan **saling menyesuaikan**:
 
@@ -365,6 +381,13 @@ Rumusnya: `harga = HPP ÷ (1 − marjin) ÷ porsi dana bersih`. Karena potongan 
 dianggap tetap sebagai persentase, menaikkan harga juga menaikkan komisi — itu sebabnya menaikkan
 harga tidak menaikkan marjin seluruhnya.
 
+**Cetak / simpan PDF** tersedia di halaman itu. Yang tercetak persis yang terlihat: kalau rincian
+sedang dibuka, rinciannya ikut tercetak; kalau ditutup, hanya ringkasannya. Menu, tombol, dan
+penyaring tidak ikut tercetak.
+
+> Kalau platform dibiarkan "Semua platform", angkanya menggabung Tokopedia dan Shopee yang
+> komisinya berbeda. Pilih salah satu platform untuk harga yang benar-benar pas.
+>
 > HPP per unit dihitung **hanya dari unit yang sudah punya HPP**. Kalau dibagi seluruh qty, unit
 > yang belum ada HPP-nya akan menyeret rerata turun dan simulasinya jadi terlalu optimistis.
 > Angka ini panduan, bukan janji — harga baru bisa mengubah jumlah penjualan.

@@ -146,9 +146,10 @@ if ($section === 'cek') {
             <td class="muted"><?= e($c['alasan']) ?></td>
             <td class="nowrap">
               <?php if ($c['status'] !== 'wajar'): ?>
-                <a class="btn ghost sm" href="product.php?<?= e(http_build_query([
-                    'key' => $c['cost_key'], 'platform' => platformFilter(), 'view' => 'simulasi',
-                ])) ?>">Simulasi harga</a>
+                <a class="btn ghost sm" target="_blank" rel="noopener"
+                   href="simulasi.php?<?= e(http_build_query(array_filter([
+                    'key' => $c['cost_key'], 'platform' => platformFilter(),
+                ], static fn($v) => $v !== null && $v !== ''))) ?>">Simulasi harga</a>
               <?php endif; ?>
             </td>
           </tr>
