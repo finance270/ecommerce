@@ -95,6 +95,31 @@ if (isset($_GET['uji'])) {
 
 $siap = $adaGitDir && $adaGit && $adaExec && $bisaTulis;
 
+// Alamat repo untuk perintah clone: pakai origin yang terbaca kalau memang
+// sudah clone, selain itu alamat repo aplikasi ini.
+$asalRepo = 'https://github.com/finance270/ecommerce.git';
+if (preg_match('~^(https://|git@)~', $remote) === 1 && str_contains($remote, 'github.com')) {
+    $asalRepo = $remote;
+}
+
+/** Perintah pindah dari folder biasa ke clone git, untuk path tertentu. */
+function perintahClone(string $path, string $asal): string
+{
+    $path = rtrim(trim($path), '/');
+    $potong = strrpos($path, '/');
+    $induk = $potong !== false && $potong > 0 ? substr($path, 0, $potong) : '/';
+    $nama = $potong !== false ? substr($path, $potong + 1) : $path;
+    if ($nama === '') {
+        $nama = 'ecommerce';
+    }
+    return "cd {$induk}\n"
+        . "mv {$nama} {$nama}-lama\n"
+        . "git clone {$asal} {$nama}\n"
+        . "cp {$nama}-lama/.env {$nama}/ 2>/dev/null || true\n"
+        . "cp -r {$nama}-lama/config {$nama}/ 2>/dev/null || true\n"
+        . "cp -r {$nama}-lama/storage {$nama}/ 2>/dev/null || true";
+}
+
 render_head('Cek lingkungan', '');
 
 /** Baris hasil pemeriksaan. */
@@ -164,6 +189,11 @@ function baris(string $nama, bool $ok, string $nilai, string $saran = ''): void
       </tbody>
     </table>
   </div>
+  <p class="help" style="margin-top:10px">
+    Folder aplikasi yang dilihat PHP: <code class="k"><?= e($akar) ?></code>.
+    Kalau di CasaOS foldernya dipasang (<i>bind mount</i>) dari path lain, path di host
+    bisa berbeda dari yang tertulis di sini &mdash; yang menentukan tetap yang dilihat PHP.
+  </p>
 </div>
 
 <?php if ($adaGitDir && $adaGit): ?>
@@ -193,21 +223,52 @@ function baris(string $nama, bool $ok, string $nilai, string $saran = ''): void
 <div class="card">
   <h2>Kalau foldernya bukan clone git</h2>
   <p class="help" style="margin-top:-4px">
-    Jalankan sekali di terminal (host), setelah menyalin dulu folder lama sebagai cadangan:
+    Jalankan sekali di terminal <b>host</b> (bukan di dalam container), setelah menyalin dulu
+    folder lama sebagai cadangan. Isi path folder aplikasi di host &mdash; perintahnya
+    ikut menyesuaikan.
   </p>
-  <pre style="background:#f7f9fc;border:1px solid var(--line);border-radius:6px;padding:12px;
-              overflow-x:auto;font-size:12.5px;margin:0"><code>cd /DATA/AppData
-mv ecommerce ecommerce-lama
-git clone https://github.com/finance270/ecommerce.git ecommerce
-cp ecommerce-lama/.env ecommerce/ 2>/dev/null || true
-cp -r ecommerce-lama/config ecommerce/ 2>/dev/null || true
-cp -r ecommerce-lama/storage ecommerce/ 2>/dev/null || true</code></pre>
+  <div class="field" style="margin-bottom:12px">
+    <label for="pathHost">Path folder aplikasi di host</label>
+    <input type="text" id="pathHost" value="<?= e($akar) ?>"
+           style="width:100%;max-width:420px;font-family:ui-monospace,monospace;font-size:12.5px">
+  </div>
+  <pre id="perintahClone" style="background:#f7f9fc;border:1px solid var(--line);border-radius:6px;
+              padding:12px;overflow-x:auto;font-size:12.5px;margin:0"><?= e(perintahClone($akar, $asalRepo)) ?></pre>
   <p class="help" style="margin-top:10px">
     <code class="k">.env</code>, <code class="k">config/</code>, dan <code class="k">storage/</code>
     disalin balik karena isinya milik server Anda, bukan bagian dari repo.
     Setelah itu buka <a href="setup.php">Pemasangan</a> sekali.
   </p>
 </div>
+
+<script>
+(function () {
+  var isi = document.getElementById('pathHost');
+  var kotak = document.getElementById('perintahClone');
+  var asal = <?= json_encode($asalRepo, JSON_UNESCAPED_SLASHES) ?>;
+  if (!isi || !kotak) return;
+
+  function susun() {
+    // Path dipecah jadi folder induk + nama folder supaya perintahnya tetap
+    // terbaca (cd ke induk, ganti nama yang lama, clone dengan nama yang sama).
+    var path = (isi.value || '').trim().replace(/\/+$/, '');
+    var potong = path.lastIndexOf('/');
+    var induk = potong > 0 ? path.slice(0, potong) : '/';
+    var nama = potong >= 0 ? path.slice(potong + 1) : path;
+    if (nama === '') { nama = 'ecommerce'; }
+    kotak.textContent =
+      'cd ' + induk + '\n' +
+      'mv ' + nama + ' ' + nama + '-lama\n' +
+      'git clone ' + asal + ' ' + nama + '\n' +
+      'cp ' + nama + '-lama/.env ' + nama + '/ 2>/dev/null || true\n' +
+      'cp -r ' + nama + '-lama/config ' + nama + '/ 2>/dev/null || true\n' +
+      'cp -r ' + nama + '-lama/storage ' + nama + '/ 2>/dev/null || true';
+  }
+
+  isi.addEventListener('input', susun);
+  susun();
+})();
+</script>
 
 <p style="margin-top:16px"><a class="btn ghost" href="index.php">&larr; Kembali</a></p>
 <?php render_foot(); ?>
