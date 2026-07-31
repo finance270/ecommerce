@@ -347,8 +347,16 @@ harga yang benar-benar Anda pasang di Tokopedia/Shopee. Ini **bukan** pendapatan
 settlement: pendapatan kotor di laporan sudah dikurangi pengembalian dana, jadi kalau dipakai
 di sini harga yang muncul akan lebih rendah daripada harga di etalase.
 
-Rantai nilainya, semua diukur terhadap harga jual dan diambil dari **rerata 3 bulan terakhir**
-produk tersebut (bisa diubah 1–12 bulan, dan bisa disaring per platform):
+Persentase pengurangnya diambil dari **pesanan terakhir yang sudah selesai dan lengkap biayanya**
+pada platform yang dipilih — bukan rerata beberapa bulan. Tarif komisi dan biaya layanan berubah
+dari waktu ke waktu, jadi pesanan paling akhir mencerminkan tarif yang berlaku sekarang sedangkan
+rerata masih membawa tarif lama. Pesanan yang batal atau yang biayanya belum tercatat tidak
+dipakai, karena tidak mewakili tarif apa pun. **HPP** diambil dari **bulan terakhir yang terisi**.
+
+Halaman menyebutkan nomor pesanan, tanggal dana dilepas, dan bulan HPP yang dipakai, sehingga
+angkanya bisa ditelusuri.
+
+Rantai nilainya, semua diukur terhadap harga jual:
 
 ```
   harga jual terdaftar        100%
@@ -366,30 +374,31 @@ platform (biaya komisi, biaya layanan, biaya administrasi, ongkir, dan seterusny
 dipertahankan: sebagian komponen ongkir justru **menambah** (diganti platform atau dibayar
 pembeli), sehingga jumlah rinciannya selalu sama persis dengan baris ringkasannya.
 
-Persentasenya dihitung dari **nilai gabungan** seluruh bulan yang dipakai, bukan rerata dari
-rerata bulanan — sehingga bulan yang ramai berbobot lebih besar. Bulan dihitung mundur dari
-**bulan settlement terakhir yang ada datanya**, bukan dari tanggal hari ini, supaya simulasi
-tetap berguna kalau berkas terakhir diunggah beberapa waktu lalu.
-
-Dua kolom bisa diubah dan **saling menyesuaikan**:
+**Semua angka bisa diubah manual** — harga jual, marjin target, persentase potongan, persentase
+biaya platform, dan HPP per unit:
 
 - isi **harga jual** → marjin yang didapat langsung terlihat;
 - isi **marjin yang diinginkan** → harga jual yang diperlukan langsung dihitung
-  (dibulatkan ke atas per Rp 100).
+  (dibulatkan ke atas per Rp 100);
+- ubah **persentase atau HPP** kalau Anda tahu tarifnya akan berubah — seluruh hitungan
+  menyesuaikan, termasuk baris rinciannya.
+
+Begitu ada yang diubah, halaman memberi catatan bahwa angkanya **tidak lagi mengikuti histori**
+(catatan ini ikut tercetak, supaya lembar PDF-nya tidak disalahpahami sebagai data asli).
+Tombol **Reset ke histori terakhir** mengembalikan semuanya.
 
 Rumusnya: `harga = HPP ÷ (1 − marjin) ÷ porsi dana bersih`. Karena potongan dan biaya platform
 dianggap tetap sebagai persentase, menaikkan harga juga menaikkan komisi — itu sebabnya menaikkan
 harga tidak menaikkan marjin seluruhnya.
 
 **Cetak / simpan PDF** tersedia di halaman itu. Yang tercetak persis yang terlihat: kalau rincian
-sedang dibuka, rinciannya ikut tercetak; kalau ditutup, hanya ringkasannya. Menu, tombol, dan
-penyaring tidak ikut tercetak.
+sedang dibuka, rinciannya ikut tercetak; kalau ditutup, hanya ringkasannya. Menu, tombol, kolom
+isian, dan penyaring tidak ikut tercetak.
 
-> Kalau platform dibiarkan "Semua platform", angkanya menggabung Tokopedia dan Shopee yang
-> komisinya berbeda. Pilih salah satu platform untuk harga yang benar-benar pas.
+> Kalau platform dibiarkan "Semua platform", pesanan terakhir bisa berasal dari platform mana pun.
+> Pilih salah satu platform untuk tarif yang benar-benar pas untuk platform itu.
 >
-> HPP per unit dihitung **hanya dari unit yang sudah punya HPP**. Kalau dibagi seluruh qty, unit
-> yang belum ada HPP-nya akan menyeret rerata turun dan simulasinya jadi terlalu optimistis.
+> Produk yang **belum punya HPP** tetap bisa disimulasikan — isi saja HPP per unitnya manual.
 > Angka ini panduan, bukan janji — harga baru bisa mengubah jumlah penjualan.
 
 ### Nilai 0 pada template dianggap belum diisi
