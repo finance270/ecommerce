@@ -244,6 +244,8 @@ render_head('HPP Produk', 'costs');
     pendapatannya &mdash; hampir pasti salah isi. Di atas
     <b><?= number_format($warnPct, 0, ',', '.') ?>%</b> perlu dicek ulang.
     Marjin negatif berarti HPP melebihi pendapatan (jual rugi).
+    <b>Klik nama produk</b> untuk melihat rinciannya &mdash; pecahan per platform, per bulan,
+    dan daftar pesanannya.
   </p>
   <div data-lazy="<?= e($lazyCek) ?>">
     <p class="loading">Menghitung marjin tiap produk&hellip;</p>

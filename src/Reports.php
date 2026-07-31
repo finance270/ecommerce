@@ -659,6 +659,9 @@ final class Reports
             "SELECT st.period_ym,
                     COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
                     COALESCE(i.variation,'') AS variasi,
+                    -- Tetap sama untuk seluruh baris dalam satu grup: kunci HPP
+                    -- dihitung dari nama+variasi yang sudah dinormalkan.
+                    MAX(i.cost_key)       AS cost_key,
                     MAX(pc.cost_per_unit) AS hpp_unit,
                     SUM(i.qty)            AS qty,
                     SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
@@ -715,6 +718,201 @@ final class Reports
             $c = $rank[$x['status']] <=> $rank[$y['status']];
             return $c !== 0 ? $c : ((float) $y['bersih'] <=> (float) $x['bersih']);
         });
+
+        return $rows;
+    }
+
+    // -----------------------------------------------------------------
+    // Rincian satu produk
+    // -----------------------------------------------------------------
+
+    /**
+     * Nama produk + variasi untuk satu kunci HPP.
+     *
+     * Kunci HPP dihitung dari nama+variasi yang sudah dinormalkan (huruf kecil,
+     * spasi dirapikan), jadi beberapa ejaan bisa berbagi satu kunci. Yang
+     * dipakai sebagai judul adalah ejaan yang paling sering muncul.
+     */
+    public static function productIdentity(string $costKey): ?array
+    {
+        return Db::one(
+            "SELECT COALESCE(NULLIF(product_name,''),'(tanpa nama)') AS produk,
+                    COALESCE(variation,'')                          AS variasi,
+                    MAX(COALESCE(NULLIF(seller_sku,''), ''))         AS sku,
+                    COUNT(*)                                        AS baris
+             FROM order_items
+             WHERE cost_key = ?
+             GROUP BY produk, variasi
+             ORDER BY baris DESC
+             LIMIT 1",
+            [$costKey]
+        );
+    }
+
+    /** Filter settlement untuk laporan per produk. */
+    private static function productWhere(?string $ym, ?string $platform): array
+    {
+        $w = 'settlement_date IS NOT NULL';
+        $a = [];
+        if ($ym !== null) {
+            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
+            $a[] = $ym;
+        }
+        if ($platform !== null) {
+            $w .= ' AND platform = ?';
+            $a[] = $platform;
+        }
+        return [$w, $a];
+    }
+
+    /**
+     * Rincian satu produk, dikelompokkan per platform atau per bulan.
+     *
+     * Nilai settlement dialokasikan ke baris produk memakai porsi
+     * subtotal-sebelum-diskon, sama persis dengan cara laporan laba per produk
+     * menghitungnya - jadi angkanya konsisten antar halaman.
+     *
+     * @param string $dim 'platform' | 'bulan'
+     */
+    public static function productBreakdown(
+        string $costKey,
+        ?string $ym,
+        ?string $platform,
+        string $dim = 'platform'
+    ): array {
+        [$w, $a] = self::productWhere($ym, $platform);
+        $sub  = self::settlementPerOrderSql($w);
+        $join = self::costJoinSql();
+        $label = $dim === 'bulan' ? 'st.period_ym' : 'i.platform';
+        $a[] = $costKey;
+
+        $rows = Db::all(
+            "SELECT {$label} AS label,
+                    COUNT(DISTINCT CONCAT(i.platform,'|',i.order_id)) AS pesanan,
+                    SUM(i.qty)                 AS qty,
+                    SUM(i.qty_returned)        AS qty_retur,
+                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
+                    SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
+                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
+                    SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
+                    SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
+                    SUM(i.qty * COALESCE(pc.cost_per_unit,0))          AS hpp,
+                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END) AS qty_tanpa_hpp,
+                    MAX(pc.cost_per_unit)                             AS hpp_unit
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}
+             WHERE i.cost_key = ?
+             GROUP BY label
+             ORDER BY bersih DESC",
+            $a
+        );
+
+        foreach ($rows as &$r) {
+            self::addProductDerived($r);
+        }
+        unset($r);
+
+        return $rows;
+    }
+
+    /** Jumlahkan beberapa baris rincian produk menjadi satu baris total. */
+    public static function productTotal(array $rows): array
+    {
+        $t = [
+            'pesanan' => 0, 'qty' => 0, 'qty_retur' => 0, 'kotor' => 0.0, 'potongan' => 0.0,
+            'pengembalian' => 0.0, 'biaya' => 0.0, 'bersih' => 0.0, 'hpp' => 0.0,
+            'qty_tanpa_hpp' => 0,
+        ];
+        foreach ($rows as $r) {
+            foreach ($t as $k => $_) {
+                $t[$k] += $r[$k] ?? 0;
+            }
+        }
+        self::addProductDerived($t);
+        return $t;
+    }
+
+    /** Kolom turunan yang sama untuk baris rincian maupun totalnya. */
+    private static function addProductDerived(array &$r): void
+    {
+        $bersih = (float) ($r['bersih'] ?? 0);
+        $hpp    = (float) ($r['hpp'] ?? 0);
+        $qty    = (int) ($r['qty'] ?? 0);
+
+        $r['laba']        = $bersih - $hpp;
+        $r['marjin']      = $bersih > 0 ? ($bersih - $hpp) / $bersih * 100 : null;
+        $r['bersih_unit'] = $qty > 0 ? $bersih / $qty : 0.0;
+        $r['laba_unit']   = $qty > 0 ? ($bersih - $hpp) / $qty : 0.0;
+    }
+
+    /** Jumlah pesanan yang memuat produk ini (untuk penomoran halaman). */
+    public static function productOrderCount(string $costKey, ?string $ym, ?string $platform): int
+    {
+        [$w, $a] = self::productWhere($ym, $platform);
+        $sub = self::settlementPerOrderSql($w);
+        $a[] = $costKey;
+
+        return (int) Db::val(
+            "SELECT COUNT(DISTINCT CONCAT(i.platform,'|',i.order_id))
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             WHERE i.cost_key = ?",
+            $a,
+            0
+        );
+    }
+
+    /** Daftar pesanan yang memuat produk ini, lengkap dengan nilai alokasinya. */
+    public static function productOrders(
+        string $costKey,
+        ?string $ym,
+        ?string $platform,
+        int $limit = 50,
+        int $offset = 0
+    ): array {
+        [$w, $a] = self::productWhere($ym, $platform);
+        $sub  = self::settlementPerOrderSql($w);
+        $join = self::costJoinSql();
+        $a[] = $costKey;
+        $limit  = max(1, min(500, $limit));
+        $offset = max(0, $offset);
+
+        $rows = Db::all(
+            "SELECT o.platform, o.order_id, o.order_date, o.status_raw, o.status_norm,
+                    o.buyer_username, st.period_ym,
+                    SUM(i.qty)          AS qty,
+                    SUM(i.qty_returned) AS qty_retur,
+                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
+                    SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
+                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
+                    SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
+                    SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
+                    SUM(i.qty * COALESCE(pc.cost_per_unit,0))          AS hpp,
+                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END) AS qty_tanpa_hpp
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}
+             WHERE i.cost_key = ?
+             GROUP BY o.id
+             ORDER BY bersih DESC
+             LIMIT {$limit} OFFSET {$offset}",
+            $a
+        );
+
+        foreach ($rows as &$r) {
+            self::addProductDerived($r);
+        }
+        unset($r);
 
         return $rows;
     }

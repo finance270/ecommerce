@@ -119,7 +119,11 @@ if ($section === 'cek') {
           <tr>
             <td><span class="badge <?= $badge[$c['status']] ?>"><?= $teks[$c['status']] ?></span></td>
             <td class="nowrap"><?= e($c['period_ym']) ?></td>
-            <td class="trunc" title="<?= e($c['produk']) ?>"><?= e($c['produk']) ?></td>
+            <td class="trunc" title="<?= e($c['produk']) ?> &mdash; klik untuk melihat rinciannya">
+              <a href="product.php?<?= e(http_build_query([
+                  'key' => $c['cost_key'], 'ym' => $c['period_ym'], 'platform' => platformFilter(),
+              ])) ?>"><?= e($c['produk']) ?></a>
+            </td>
             <td><?= e($c['variasi'] !== '' ? $c['variasi'] : '-') ?></td>
             <td class="num"><?= num($c['qty']) ?></td>
             <td class="num"><?= rp($c['hpp_unit']) ?></td>

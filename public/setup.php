@@ -185,6 +185,8 @@ function runMigrations(PDO $pdo, string $dbName): array
         ['settlements', 'idx_settlements_alloc',
          'ALTER TABLE settlements ADD INDEX idx_settlements_alloc (platform, order_id, settlement_date, gross_amount, total_potongan, refund_amount, total_fee, net_amount)'],
         ['orders', 'idx_orders_alloc', 'ALTER TABLE orders ADD INDEX idx_orders_alloc (platform, order_id, items_subtotal_before)'],
+        // Dipakai halaman rincian produk, yang menyaring baris item per kunci HPP.
+        ['order_items', 'idx_items_cost_key', 'ALTER TABLE order_items ADD INDEX idx_items_cost_key (cost_key)'],
     ] as [$t, $idx, $sql]) {
         $has = (int) ($pdo->query(
             "SELECT COUNT(*) FROM information_schema.statistics

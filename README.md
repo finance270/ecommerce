@@ -275,6 +275,36 @@ langsung kelihatan.
 > dibulatkan ke 1 desimal — sama seperti yang ditampilkan — supaya HPP sebesar Rp 1 pada produk
 > ratusan ribu tetap tertangkap sebagai "sangat tidak wajar".
 
+### Rincian per produk
+
+**Nama produk pada tabel uji kewajaran bisa diklik** dan membuka halaman rincian produk tersebut.
+Isinya:
+
+- **Rantai nilai** dari pendapatan kotor sampai laba bersih — potongan, pengembalian, biaya
+  platform, lalu HPP — masing-masing disertai **porsinya terhadap pendapatan kotor** dan
+  **nilai per unit**, jadi langsung terbayang berapa persen yang benar-benar tersisa jadi laba.
+- **Pecahan per platform** dan **per bulan settlement**: pesanan, qty, kotor, potongan, dana
+  bersih, HPP, dan laba, masing-masing dengan porsinya terhadap total.
+- **Daftar pesanan** yang memuat produk itu. Tiap barisnya bisa dibuka untuk melihat rincian
+  pesanan utuhnya, sama seperti dari tab Pesanan.
+
+Nilai pada halaman ini adalah **bagian produk tersebut saja** dari tiap pesanan, dialokasikan
+memakai porsi subtotal sebelum diskon — cara yang sama dengan laporan laba per produk, sehingga
+angkanya konsisten antar halaman.
+
+Dua hal yang sengaja tidak dipaksakan supaya angkanya tidak menyesatkan:
+
+- Porsi hanya ditampilkan kalau seluruh baris pada kolom itu **searah**. Kolom laba bisa
+  bercampur — ada bulan untung, ada bulan rugi — dan totalnya adalah selisihnya. Kalau porsinya
+  dipaksakan, bulan yang untung akan tampak menyumbang minus dan bulan yang paling rugi tampak
+  menyumbang 225%. Dalam keadaan begitu kolom porsinya dikosongkan.
+- Bulan yang sebagian unitnya **belum punya HPP** ditandai (`n unit tanpa HPP`) dan marjinnya
+  diberi label `semu`, karena bagian itu dihitung HPP = 0 sehingga marjinnya tampak lebih besar.
+
+Daftar pesanan memuat nomor pesanan dan nama pembeli — itu isi tab Pesanan — jadi bagian tersebut
+mengikuti hak akses tab **Pesanan**, bukan hak akses HPP. Pengguna yang hanya diberi tab HPP tetap
+bisa melihat ringkasan dan pecahannya, tetapi tidak daftar pesanannya.
+
 ### Nilai 0 pada template dianggap belum diisi
 
 Baik pada template HPP maupun beban operasional, baris yang diisi **0** diperlakukan sama dengan
