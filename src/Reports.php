@@ -12,6 +12,20 @@ declare(strict_types=1);
  */
 final class Reports
 {
+    /**
+     * Pendapatan kotor yang SUDAH dikurangi pengembalian dana.
+     *
+     * Barang yang direfund kembali ke penjual, jadi penjualannya memang tidak
+     * pernah jadi. Menampilkannya sebagai "kotor" penuh lalu menguranginya
+     * lagi di baris terpisah membuat omzet terlihat lebih besar dari yang
+     * sebenarnya terjadi. Karena itu seluruh laporan memakai angka yang sudah
+     * bersih dari refund, dan refund dilaporkan terpisah di halaman
+     * Pengembalian.
+     *
+     * `refund_amount` disimpan bernilai negatif, jadi cukup ditambahkan.
+     */
+    public const KOTOR = '(gross_amount + refund_amount)';
+
     /** Bangun potongan WHERE + parameter untuk filter standar. */
     private static function filter(string $dateCol, ?string $from, ?string $to, ?string $platform, string $alias = ''): array
     {
@@ -80,11 +94,11 @@ final class Reports
         [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
         return Db::one(
             "SELECT
-                COUNT(*)                       AS total_trx,
-                COALESCE(SUM(gross_amount),0)  AS pendapatan_kotor,
-                COALESCE(SUM(total_fee),0)     AS total_biaya,
-                COALESCE(SUM(net_amount),0)    AS dana_diterima,
-                COALESCE(SUM(refund_amount),0) AS pengembalian
+                COUNT(*)                          AS total_trx,
+                COALESCE(SUM(" . self::KOTOR . "),0) AS pendapatan_kotor,
+                COALESCE(SUM(total_fee),0)        AS total_biaya,
+                COALESCE(SUM(net_amount),0)       AS dana_diterima,
+                COALESCE(SUM(refund_amount),0)    AS pengembalian
              FROM settlements WHERE {$w}",
             $a
         ) ?? [];
@@ -130,7 +144,7 @@ final class Reports
         $head = Db::one(
             "SELECT
                 COUNT(*) AS trx,
-                COALESCE(SUM(gross_amount),0)      AS pendapatan_kotor,
+                COALESCE(SUM(" . self::KOTOR . "),0) AS pendapatan_kotor,
                 COALESCE(SUM(discount_seller),0)   AS diskon_penjual,
                 COALESCE(SUM(refund_amount),0)     AS pengembalian,
                 COALESCE(SUM(adjustment_amount),0) AS penyesuaian,
@@ -140,7 +154,6 @@ final class Reports
             $a
         ) ?? [];
 
-        [$w2, $a2] = self::filter('settlement_date', $from, $to, $platform);
         return ['ringkasan' => $head, 'kategori' => self::categoryTotals($from, $to, $platform)];
     }
 
@@ -163,7 +176,9 @@ final class Reports
             $select[] = "COALESCE(SUM(fee_{$cat}),0) AS `c_{$cat}`";
         }
         $select[] = 'COALESCE(SUM(total_potongan),0)    AS `c_potongan`';
-        $select[] = 'COALESCE(SUM(refund_amount),0)     AS `c_refund`';
+        // Pengembalian sengaja tidak masuk daftar kategori: nilainya sudah
+        // dipotong dari pendapatan kotor, jadi menampilkannya lagi di sini
+        // akan menghitungnya dua kali. Rinciannya ada di halaman Pengembalian.
         $select[] = 'COALESCE(SUM(adjustment_amount),0) AS `c_penyesuaian`';
 
         $row = Db::one('SELECT ' . implode(', ', $select) . " FROM settlements WHERE {$w}", $a) ?? [];
@@ -182,13 +197,13 @@ final class Reports
 
     /**
      * Jembatan angka per platform, selalu berimbang:
-     *   pendapatan kotor + potongan + pengembalian + biaya platform
+     *   pendapatan kotor + potongan + biaya platform
      *   + penyesuaian + selisih pencatatan = dana diterima bersih
      *
      * Pendapatan kotor memakai kolom paling kotor yang tersedia
      * ("Subtotal sebelum diskon" untuk Tokopedia, "Harga Asli Produk" untuk
-     * Shopee), sehingga diskon penjual tampil sebagai baris tersendiri dan
-     * kedua platform bisa dibandingkan setara.
+     * Shopee) DIKURANGI pengembalian, sehingga diskon penjual tampil sebagai
+     * baris tersendiri dan kedua platform bisa dibandingkan setara.
      *
      * "Dana diterima bersih" diambil dari kolom resmi platform, sehingga baris
      * selisih memperlihatkan secara jujur bila laporan platform sendiri tidak
@@ -199,9 +214,8 @@ final class Reports
         [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
         $rows = Db::all(
             "SELECT platform,
-                    COALESCE(SUM(gross_amount),0)      AS kotor,
+                    COALESCE(SUM(" . self::KOTOR . "),0) AS kotor,
                     COALESCE(SUM(total_potongan),0)    AS potongan,
-                    COALESCE(SUM(refund_amount),0)     AS refund,
                     COALESCE(SUM(total_fee),0)         AS biaya,
                     COALESCE(SUM(adjustment_amount),0) AS penyesuaian,
                     COALESCE(SUM(net_amount),0)        AS bersih
@@ -211,13 +225,12 @@ final class Reports
 
         $out = [];
         foreach ($rows as $r) {
-            $subtotal = (float) $r['kotor'] + (float) $r['potongan'] + (float) $r['refund']
+            $subtotal = (float) $r['kotor'] + (float) $r['potongan']
                 + (float) $r['biaya'] + (float) $r['penyesuaian'];
             $out[] = [
                 'platform'    => (string) $r['platform'],
                 'kotor'       => (float) $r['kotor'],
                 'potongan'    => (float) $r['potongan'],
-                'refund'      => (float) $r['refund'],
                 'biaya'       => (float) $r['biaya'],
                 'penyesuaian' => (float) $r['penyesuaian'],
                 'selisih'     => (float) $r['bersih'] - $subtotal,
@@ -230,7 +243,7 @@ final class Reports
     /** Jumlahkan seluruh baris jembatan menjadi satu ringkasan. */
     public static function bridgeTotals(array $bridge): array
     {
-        $t = ['kotor' => 0.0, 'potongan' => 0.0, 'refund' => 0.0, 'biaya' => 0.0,
+        $t = ['kotor' => 0.0, 'potongan' => 0.0, 'biaya' => 0.0,
               'penyesuaian' => 0.0, 'selisih' => 0.0, 'bersih' => 0.0];
         foreach ($bridge as $b) {
             foreach ($t as $k => $_) {
@@ -283,9 +296,8 @@ final class Reports
         $rows = Db::all(
             "SELECT DATE_FORMAT(settlement_date,'%Y-%m') AS bulan, platform,
                     COUNT(*) AS trx,
-                    COALESCE(SUM(gross_amount),0)      AS pendapatan_kotor,
+                    COALESCE(SUM(" . self::KOTOR . "),0) AS pendapatan_kotor,
                     COALESCE(SUM(total_potongan),0)    AS potongan,
-                    COALESCE(SUM(refund_amount),0)     AS pengembalian,
                     COALESCE(SUM(total_fee),0)         AS total_biaya,
                     COALESCE(SUM(adjustment_amount),0) AS penyesuaian,
                     COALESCE(SUM(net_amount),0)        AS dana_diterima
@@ -296,9 +308,10 @@ final class Reports
         );
         foreach ($rows as &$r) {
             $r['selisih'] = (float) $r['dana_diterima'] - ((float) $r['pendapatan_kotor']
-                + (float) $r['potongan'] + (float) $r['pengembalian']
+                + (float) $r['potongan']
                 + (float) $r['total_biaya'] + (float) $r['penyesuaian']);
         }
+        unset($r);
         return $rows;
     }
 
@@ -405,7 +418,6 @@ final class Reports
                     SUM(i.qty)                 AS qty,
                     SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
                     SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
-                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
                     SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     CASE WHEN SUM(st.gross_amount * i.subtotal_before_disc / o.items_subtotal_before) > 0
@@ -483,13 +495,15 @@ final class Reports
     /** Sub-query settlement per pesanan + bulan settlement-nya. */
     private static function settlementPerOrderSql(string $where): string
     {
+        // gross_amount di sini sudah bersih dari pengembalian (lihat const
+        // KOTOR), sehingga seluruh laporan per produk yang memakai sub-query
+        // ini ikut bersih tanpa perlu mengurangkan refund lagi.
         return "SELECT platform, order_id,
                        DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
-                       SUM(gross_amount)   AS gross_amount,
-                       SUM(total_potongan) AS total_potongan,
-                       SUM(refund_amount)  AS refund_amount,
-                       SUM(total_fee)      AS total_fee,
-                       SUM(net_amount)     AS net_amount
+                       SUM(" . self::KOTOR . ") AS gross_amount,
+                       SUM(total_potongan)      AS total_potongan,
+                       SUM(total_fee)           AS total_fee,
+                       SUM(net_amount)          AS net_amount
                 FROM settlements
                 WHERE {$where}
                 GROUP BY platform, order_id";
@@ -516,7 +530,6 @@ final class Reports
                     SUM(i.qty)                 AS qty,
                     SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
                     SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
-                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
                     SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     SUM(i.qty * COALESCE(pc.cost_per_unit, 0))          AS hpp,
@@ -632,16 +645,34 @@ final class Reports
         );
     }
 
+    /** Marjin sehat untuk produk kopi bubuk/biji: dipakai sebagai nilai awal. */
+    public const MARJIN_MIN = 60.0;
+    public const MARJIN_MAX = 80.0;
+
     /**
      * Uji kewajaran HPP untuk produk yang HPP-nya SUDAH diisi.
      *
-     * Marjin laba = (dana bersih - HPP) / dana bersih. Marjin mendekati 100%
-     * berarti HPP nyaris nol dibanding pendapatannya - hampir pasti salah
-     * isi. Marjin negatif berarti HPP melebihi pendapatan (jual rugi).
-     * Ambang batasnya bisa diatur dari halaman.
+     * Marjin laba = (dana bersih - HPP) / dana bersih, dan yang dianggap wajar
+     * adalah sebuah RENTANG, bukan sekadar batas atas. Untuk kopi bubuk/biji
+     * marjin sehat berkisar 60-80%:
+     *
+     *   - di BAWAH batas bawah  -> marjin terlalu tipis; harga jual kekecilan
+     *     atau HPP-nya kemahalan, dua-duanya perlu ditindaklanjuti;
+     *   - di ATAS batas atas    -> HPP kemungkinan terlalu kecil atau belum
+     *     lengkap (ongkos kemasan, susut, dan sejenisnya belum dihitung);
+     *   - mendekati 100%        -> HPP nyaris nol dibanding pendapatan, hampir
+     *     pasti salah isi;
+     *   - negatif               -> HPP melebihi pendapatan (jual rugi).
+     *
+     * Ketiga ambang bisa diatur dari halaman karena tiap jenis produk berbeda.
      */
-    public static function costMarginCheck(?string $ym, ?string $platform, float $warnPct = 70.0, float $badPct = 100.0): array
-    {
+    public static function costMarginCheck(
+        ?string $ym,
+        ?string $platform,
+        float $minPct = self::MARJIN_MIN,
+        float $maxPct = self::MARJIN_MAX,
+        float $badPct = 100.0
+    ): array {
         $w = 'settlement_date IS NOT NULL';
         $a = [];
         if ($ym !== null) {
@@ -703,9 +734,12 @@ final class Reports
             } elseif ($m >= $badPct) {
                 $r['status'] = 'parah';
                 $r['alasan'] = 'HPP nyaris nol dibanding pendapatan - hampir pasti salah isi';
-            } elseif ($m > $warnPct) {
+            } elseif ($m > $maxPct) {
                 $r['status'] = 'periksa';
-                $r['alasan'] = 'Marjin di atas batas wajar, HPP kemungkinan terlalu kecil';
+                $r['alasan'] = 'Marjin di atas rentang wajar, HPP kemungkinan terlalu kecil atau belum lengkap';
+            } elseif ($m < $minPct) {
+                $r['status'] = 'tipis';
+                $r['alasan'] = 'Marjin di bawah rentang wajar - harga jual terlalu rendah atau HPP terlalu tinggi';
             } else {
                 $r['status'] = 'wajar';
                 $r['alasan'] = '';
@@ -714,7 +748,7 @@ final class Reports
         unset($r);
 
         usort($rows, static function (array $x, array $y): int {
-            $rank = ['parah' => 0, 'rugi' => 1, 'periksa' => 2, 'wajar' => 3];
+            $rank = ['parah' => 0, 'rugi' => 1, 'tipis' => 2, 'periksa' => 3, 'wajar' => 4];
             $c = $rank[$x['status']] <=> $rank[$y['status']];
             return $c !== 0 ? $c : ((float) $y['bersih'] <=> (float) $x['bersih']);
         });
@@ -793,7 +827,6 @@ final class Reports
                     SUM(i.qty_returned)        AS qty_retur,
                     SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
                     SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
-                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
                     SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     SUM(i.qty * COALESCE(pc.cost_per_unit,0))          AS hpp,
@@ -824,7 +857,7 @@ final class Reports
     {
         $t = [
             'pesanan' => 0, 'qty' => 0, 'qty_retur' => 0, 'kotor' => 0.0, 'potongan' => 0.0,
-            'pengembalian' => 0.0, 'biaya' => 0.0, 'bersih' => 0.0, 'hpp' => 0.0,
+            'biaya' => 0.0, 'bersih' => 0.0, 'hpp' => 0.0,
             'qty_tanpa_hpp' => 0,
         ];
         foreach ($rows as $r) {
@@ -869,6 +902,109 @@ final class Reports
         );
     }
 
+    /**
+     * Bahan simulasi harga jual: rerata perilaku produk selama N bulan terakhir.
+     *
+     * Yang dicari adalah pola yang stabil, bukan angka satu bulan:
+     *   - berapa persen dari harga jual yang hilang jadi potongan/diskon,
+     *   - berapa persen yang hilang jadi biaya platform,
+     *   - berapa HPP per unitnya.
+     *
+     * Ketiganya dihitung dari nilai gabungan seluruh bulan yang dipakai
+     * (bukan rerata dari rerata bulanan), sehingga bulan yang ramai punya
+     * bobot lebih besar - itu yang lebih mewakili keadaan sebenarnya.
+     *
+     * Bulan diambil dari bulan settlement TERAKHIR yang ada datanya untuk
+     * produk ini, bukan dari tanggal hari ini, supaya simulasi tetap berguna
+     * saat berkas terakhir diunggah beberapa waktu lalu.
+     */
+    public static function pricingBasis(string $costKey, ?string $platform, int $bulan = 3): array
+    {
+        $bulan = max(1, min(24, $bulan));
+
+        // Bulan terakhir yang ada settlement-nya untuk produk ini.
+        [$w0, $a0] = self::productWhere(null, $platform);
+        $sub0 = self::settlementPerOrderSql($w0);
+        $a0[] = $costKey;
+        $akhir = Db::val(
+            "SELECT MAX(st.period_ym)
+             FROM ({$sub0}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             WHERE i.cost_key = ?",
+            $a0
+        );
+        if ($akhir === null || $akhir === '') {
+            return ['bulan_dipakai' => [], 'qty' => 0, 'kotor' => 0.0, 'potongan' => 0.0,
+                    'biaya' => 0.0, 'bersih' => 0.0, 'hpp' => 0.0, 'hpp_unit' => null,
+                    'harga_unit' => null, 'potongan_pct' => null, 'biaya_pct' => null,
+                    'bersih_pct' => null, 'marjin' => null, 'qty_tanpa_hpp' => 0];
+        }
+
+        $mulai = date('Y-m', strtotime((string) $akhir . '-01 -' . ($bulan - 1) . ' months'));
+
+        $w = 'settlement_date IS NOT NULL'
+           . " AND DATE_FORMAT(settlement_date,'%Y-%m') BETWEEN ? AND ?";
+        $a = [$mulai, (string) $akhir];
+        if ($platform !== null) {
+            $w .= ' AND platform = ?';
+            $a[] = $platform;
+        }
+        $sub  = self::settlementPerOrderSql($w);
+        $join = self::costJoinSql();
+        $a[]  = $costKey;
+
+        $row = Db::one(
+            "SELECT GROUP_CONCAT(DISTINCT st.period_ym ORDER BY st.period_ym) AS bulan_dipakai,
+                    SUM(i.qty)          AS qty,
+                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
+                    SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
+                    SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
+                    SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
+                    SUM(i.qty * COALESCE(pc.cost_per_unit,0))          AS hpp,
+                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END) AS qty_tanpa_hpp
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             {$join}
+             WHERE i.cost_key = ?",
+            $a
+        ) ?? [];
+
+        $qty      = (int) ($row['qty'] ?? 0);
+        $kotor    = (float) ($row['kotor'] ?? 0);
+        $potongan = abs((float) ($row['potongan'] ?? 0));
+        $biaya    = abs((float) ($row['biaya'] ?? 0));
+        $bersih   = (float) ($row['bersih'] ?? 0);
+        $hpp      = (float) ($row['hpp'] ?? 0);
+        // HPP per unit dihitung hanya dari unit yang benar-benar punya HPP;
+        // kalau dibagi seluruh qty, unit tanpa HPP akan menyeret reratanya
+        // turun dan simulasi jadi terlalu optimistis.
+        $qtyBerHpp = $qty - (int) ($row['qty_tanpa_hpp'] ?? 0);
+
+        return [
+            'bulan_dipakai' => $row['bulan_dipakai'] !== null && $row['bulan_dipakai'] !== ''
+                ? explode(',', (string) $row['bulan_dipakai']) : [],
+            'qty'           => $qty,
+            'qty_tanpa_hpp' => (int) ($row['qty_tanpa_hpp'] ?? 0),
+            'kotor'         => $kotor,
+            'potongan'      => $potongan,
+            'biaya'         => $biaya,
+            'bersih'        => $bersih,
+            'hpp'           => $hpp,
+            'hpp_unit'      => $qtyBerHpp > 0 ? $hpp / $qtyBerHpp : null,
+            'harga_unit'    => $qty > 0 ? $kotor / $qty : null,
+            'potongan_pct'  => $kotor > 0 ? $potongan / $kotor * 100 : null,
+            'biaya_pct'     => $kotor > 0 ? $biaya / $kotor * 100 : null,
+            'bersih_pct'    => $kotor > 0 ? $bersih / $kotor * 100 : null,
+            'marjin'        => $bersih > 0 ? ($bersih - $hpp) / $bersih * 100 : null,
+        ];
+    }
+
     /** Daftar pesanan yang memuat produk ini, lengkap dengan nilai alokasinya. */
     public static function productOrders(
         string $costKey,
@@ -891,7 +1027,6 @@ final class Reports
                     SUM(i.qty_returned) AS qty_retur,
                     SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
                     SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
-                    SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS pengembalian,
                     SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     SUM(i.qty * COALESCE(pc.cost_per_unit,0))          AS hpp,
@@ -915,6 +1050,115 @@ final class Reports
         unset($r);
 
         return $rows;
+    }
+
+    // -----------------------------------------------------------------
+    // Pengembalian dana (refund)
+    // -----------------------------------------------------------------
+
+    /**
+     * Ringkasan pengembalian dana.
+     *
+     * Nilai refund disimpan negatif; di sini dibalik jadi positif supaya
+     * laporannya terbaca sebagai "berapa besar pengembalian", bukan sebagai
+     * pengurang. Pembanding "kotor" adalah pendapatan kotor SEBELUM dikurangi
+     * refund - itulah dasar yang benar untuk mengukur tingkat pengembalian.
+     */
+    public static function refundSummary(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        $row = Db::one(
+            "SELECT COALESCE(-SUM(refund_amount),0)  AS refund,
+                    COALESCE(SUM(gross_amount),0)    AS kotor_sebelum,
+                    SUM(refund_amount <> 0)          AS trx_refund,
+                    COUNT(DISTINCT CASE WHEN refund_amount <> 0
+                                        THEN CONCAT(platform,'|',order_id) END) AS pesanan_refund,
+                    COUNT(DISTINCT CONCAT(platform,'|',order_id))               AS pesanan_total
+             FROM settlements WHERE {$w}",
+            $a
+        ) ?? [];
+
+        $kotor = (float) ($row['kotor_sebelum'] ?? 0);
+        $row['rasio'] = $kotor > 0 ? (float) ($row['refund'] ?? 0) / $kotor * 100 : null;
+        $row['rasio_pesanan'] = ((int) ($row['pesanan_total'] ?? 0)) > 0
+            ? (int) $row['pesanan_refund'] / (int) $row['pesanan_total'] * 100
+            : null;
+        return $row;
+    }
+
+    /**
+     * Pengembalian per bulan settlement, dipecah per platform.
+     *
+     * Pembandingnya adalah pendapatan kotor SELURUH bulan itu, bukan hanya
+     * transaksi yang kena refund - kalau hanya yang kena refund yang dibagi,
+     * rasionya akan terbaca seolah-olah hampir seluruh bulan dikembalikan.
+     * Baris tanpa refund disaring lewat HAVING, setelah penjumlahan.
+     */
+    public static function refundByMonth(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        return Db::all(
+            "SELECT DATE_FORMAT(settlement_date,'%Y-%m') AS bulan, platform,
+                    COALESCE(-SUM(refund_amount),0) AS refund,
+                    COALESCE(SUM(gross_amount),0)   AS kotor_sebelum,
+                    SUM(refund_amount <> 0)         AS trx_refund
+             FROM settlements
+             WHERE {$w} AND settlement_date IS NOT NULL
+             GROUP BY bulan, platform
+             HAVING refund <> 0
+             ORDER BY bulan DESC, platform",
+            $a
+        );
+    }
+
+    /** Produk yang paling sering / paling besar dikembalikan. */
+    public static function refundByProduct(?string $from, ?string $to, ?string $platform, int $limit = 100): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        // Hanya settlement yang benar-benar ada refund-nya yang ditelusuri,
+        // sehingga penelusuran ke baris produk tetap ringan.
+        $sub = "SELECT platform, order_id,
+                       SUM(refund_amount) AS refund_amount
+                FROM settlements
+                WHERE {$w} AND refund_amount <> 0
+                GROUP BY platform, order_id";
+
+        return Db::all(
+            "SELECT COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                    COALESCE(i.variation,'') AS variasi,
+                    MAX(i.cost_key)          AS cost_key,
+                    COUNT(DISTINCT CONCAT(i.platform,'|',i.order_id)) AS pesanan,
+                    SUM(i.qty_returned)      AS qty_retur,
+                    COALESCE(-SUM(st.refund_amount * i.subtotal_before_disc
+                                  / o.items_subtotal_before),0) AS refund
+             FROM ({$sub}) st
+             STRAIGHT_JOIN orders o
+                 ON o.platform = st.platform AND o.order_id = st.order_id
+                AND o.items_subtotal_before > 0
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             GROUP BY produk, variasi
+             ORDER BY refund DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /** Daftar transaksi pengembalian, untuk ditelusuri satu per satu. */
+    public static function refundList(?string $from, ?string $to, ?string $platform, int $limit = 200): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        $limit = max(1, min(2000, $limit));
+        return Db::all(
+            "SELECT platform, order_id, settlement_date, trx_type,
+                    gross_amount,
+                    -refund_amount AS refund,
+                    net_amount
+             FROM settlements
+             WHERE {$w} AND refund_amount <> 0
+             ORDER BY refund DESC
+             LIMIT {$limit}",
+            $a
+        );
     }
 
     // -----------------------------------------------------------------

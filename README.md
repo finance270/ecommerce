@@ -158,6 +158,7 @@ akan **0**.
 | **HPP** | Impor HPP per produk per bulan + **pemantauan produk yang belum ada HPP** |
 | **Beban** | Impor beban operasional per bulan (gaji, sewa, listrik, packaging, iklan, dll) |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
+| **Pengembalian** | Refund per bulan, per produk, dan per transaksi &mdash; laporan tersendiri |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
 | **Monitoring** | Periode mana yang datanya belum diperbarui, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses |
@@ -168,7 +169,8 @@ Semua laporan bisa diekspor ke **CSV** (UTF-8 + pemisah `;`, langsung rapi di Ex
 ### Apa itu "pendapatan kotor"
 
 Supaya Tokopedia dan Shopee bisa dibandingkan setara, **pendapatan kotor** selalu memakai nilai
-penjualan **sebelum diskon apa pun**:
+penjualan **sebelum diskon apa pun**, lalu **dikurangi pengembalian dana** (lihat
+*Pengembalian dana* di bawah):
 
 | Platform | Kolom yang dipakai |
 | --- | --- |
@@ -197,9 +199,8 @@ Jembatan angkanya selalu berimbang, dan **seluruh pengurang ditampilkan** di hal
 **Laba & Biaya** — pada ringkasan, pada jembatan per platform, maupun pada rekap bulanan:
 
 ```
-  pendapatan kotor
+  pendapatan kotor   (sudah dikurangi pengembalian)
 - diskon & voucher yang ditanggung penjual
-- pengembalian dana ke pembeli
 - biaya platform
 + penyesuaian
 = dana diterima bersih
@@ -211,6 +212,29 @@ Jembatan angkanya selalu berimbang, dan **seluruh pengurang ditampilkan** di hal
 
 HPP dan beban operasional dicocokkan pada **bulan settlement** yang sama, supaya biaya dan
 pendapatannya berada pada periode yang sama.
+
+### Pengembalian dana (refund)
+
+Barang yang direfund **kembali ke penjual**, jadi penjualannya memang tidak pernah jadi.
+Menampilkannya sebagai omzet penuh lalu menguranginya lagi di baris terpisah membuat omzet
+terlihat lebih besar dari yang sebenarnya terjadi.
+
+Karena itu **pendapatan kotor di seluruh laporan sudah bersih dari refund** — di ringkasan
+laba rugi, jembatan per platform, rekap bulanan, laporan per produk, rincian produk, halaman
+Settlement, dan semua ekspor CSV. Tidak ada lagi baris "pengembalian dana" sebagai pengurang,
+karena nilainya sudah tidak pernah ikut dihitung sebagai pendapatan.
+
+Rinciannya dipindah ke menu **Pengembalian** tersendiri:
+
+- total refund, rasionya terhadap kotor **sebelum** refund, dan berapa pesanan yang terkena;
+- refund per bulan per platform, dengan rasio terhadap kotor **seluruh bulan itu** (bukan hanya
+  transaksi yang kena refund — kalau begitu rasionya akan terbaca seolah hampir seluruh bulan
+  dikembalikan);
+- produk yang paling banyak dikembalikan, dialokasikan memakai porsi subtotal sebelum diskon;
+- daftar transaksi refund terbesar, masing-masing bisa dibuka ke rincian pesanannya.
+
+Rasio terhadap kotor sengaja memakai pembanding **sebelum** refund, karena itulah dasar yang
+benar untuk mengukur seberapa besar tingkat pengembalian.
 
 ### HPP dan beban operasional
 
@@ -259,16 +283,22 @@ Untuk produk yang HPP-nya **sudah** diisi, menu **HPP** menguji kewajarannya:
 marjin laba = (dana bersih − HPP) ÷ dana bersih
 ```
 
+Yang dianggap wajar adalah sebuah **rentang**, bukan sekadar batas atas. Nilai awalnya
+**60%–80%**, angka yang sehat untuk produk kopi bubuk/biji:
+
 | Status | Kondisi | Artinya |
 | --- | --- | --- |
-| Wajar | marjin ≤ 70% | tidak ada indikasi salah isi |
-| Perlu dicek | marjin di atas 70% | HPP kemungkinan terlalu kecil |
+| Wajar | marjin 60%–80% | sehat, tidak ada indikasi salah isi |
+| Marjin tipis | di bawah 60% | harga jual terlalu rendah atau HPP terlalu tinggi |
+| Perlu dicek | di atas 80% | HPP kemungkinan terlalu kecil atau belum lengkap |
 | Sangat tidak wajar | marjin ≥ 100% | HPP nyaris nol dibanding pendapatan, hampir pasti salah |
 | Jual rugi | marjin negatif | HPP melebihi pendapatan bersih |
 
-Kedua ambang (70% dan 100%) bisa diubah langsung dari halaman. Tabelnya menampilkan
-**HPP per unit** berdampingan dengan **pendapatan bersih per unit**, sehingga salah isi angka
-langsung kelihatan.
+Ketiga ambang (60%, 80%, 100%) bisa diubah langsung dari halaman karena tiap jenis produk
+berbeda. Tabelnya menampilkan **HPP per unit** berdampingan dengan **pendapatan bersih per unit**,
+sehingga salah isi angka langsung kelihatan.
+
+Baris yang statusnya bukan "Wajar" punya tombol **Simulasi harga** di kolom paling kanan.
 
 > Karena nilai 0 pada template diabaikan (lihat di bawah), HPP yang tersimpan selalu lebih besar
 > dari nol sehingga marjin tidak pernah persis 100%. Klasifikasinya memakai angka yang
@@ -280,8 +310,8 @@ langsung kelihatan.
 **Nama produk pada tabel uji kewajaran bisa diklik** dan membuka halaman rincian produk tersebut.
 Isinya:
 
-- **Rantai nilai** dari pendapatan kotor sampai laba bersih — potongan, pengembalian, biaya
-  platform, lalu HPP — masing-masing disertai **porsinya terhadap pendapatan kotor** dan
+- **Rantai nilai** dari pendapatan kotor sampai laba bersih — potongan, biaya platform, lalu
+  HPP — masing-masing disertai **porsinya terhadap pendapatan kotor** dan
   **nilai per unit**, jadi langsung terbayang berapa persen yang benar-benar tersisa jadi laba.
 - **Pecahan per platform** dan **per bulan settlement**: pesanan, qty, kotor, potongan, dana
   bersih, HPP, dan laba, masing-masing dengan porsinya terhadap total.
@@ -304,6 +334,40 @@ Dua hal yang sengaja tidak dipaksakan supaya angkanya tidak menyesatkan:
 Daftar pesanan memuat nomor pesanan dan nama pembeli — itu isi tab Pesanan — jadi bagian tersebut
 mengikuti hak akses tab **Pesanan**, bukan hak akses HPP. Pengguna yang hanya diberi tab HPP tetap
 bisa melihat ringkasan dan pecahannya, tetapi tidak daftar pesanannya.
+
+### Simulasi harga jual
+
+Produk yang marjinnya di luar rentang wajar punya tombol **Simulasi harga**. Halaman ini menjawab
+satu pertanyaan: *berapa harga jual yang diperlukan supaya marjin bersih setelah HPP sesuai target?*
+
+Dasarnya diambil dari **rerata 3 bulan terakhir** produk tersebut (bisa diubah 1–12 bulan):
+
+| Komponen | Cara dihitung |
+| --- | --- |
+| Potongan & diskon | % dari harga jual, rerata periode |
+| Biaya platform | % dari harga jual, rerata periode |
+| Dana diterima bersih | % dari harga jual, rerata periode |
+| HPP per unit | rerata periode |
+
+Persentasenya dihitung dari **nilai gabungan** seluruh bulan yang dipakai, bukan rerata dari
+rerata bulanan — sehingga bulan yang ramai berbobot lebih besar dan hasilnya lebih mewakili
+keadaan sebenarnya. Bulan dihitung mundur dari **bulan settlement terakhir yang ada datanya**,
+bukan dari tanggal hari ini, supaya simulasi tetap berguna kalau berkas terakhir diunggah
+beberapa waktu lalu.
+
+Dua kolom bisa diubah dan **saling menyesuaikan**:
+
+- isi **harga jual** → marjin yang didapat langsung terlihat;
+- isi **marjin yang diinginkan** → harga jual yang diperlukan langsung dihitung
+  (dibulatkan ke atas per Rp 100).
+
+Rumusnya: `harga = HPP ÷ (1 − marjin) ÷ porsi dana bersih`. Karena potongan dan biaya platform
+dianggap tetap sebagai persentase, menaikkan harga juga menaikkan komisi — itu sebabnya menaikkan
+harga tidak menaikkan marjin seluruhnya.
+
+> HPP per unit dihitung **hanya dari unit yang sudah punya HPP**. Kalau dibagi seluruh qty, unit
+> yang belum ada HPP-nya akan menyeret rerata turun dan simulasinya jadi terlalu optimistis.
+> Angka ini panduan, bukan janji — harga baru bisa mengubah jumlah penjualan.
 
 ### Nilai 0 pada template dianggap belum diisi
 

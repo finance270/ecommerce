@@ -70,13 +70,13 @@ if ($section === 'produk') {
           <th>#</th><th>Produk</th><th>Platform</th>
           <th class="num">Pesanan</th><th class="num">Qty</th>
           <th class="num">Kotor</th><th class="num">Diskon &amp; voucher</th>
-          <th class="num">Pengembalian</th><th class="num">Biaya platform</th>
+          <th class="num">Biaya platform</th>
           <th class="num">Bersih</th><th class="num">HPP</th>
           <th class="num">Laba</th><th class="num">Marjin laba</th>
         </tr></thead>
         <tbody>
         <?php
-        $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'pengembalian' => 0.0, 'biaya' => 0.0,
+        $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'biaya' => 0.0,
                'bersih' => 0.0, 'hpp' => 0.0, 'laba' => 0.0, 'qty' => 0.0];
         foreach ($produk as $i => $p):
             foreach ($pt as $k => $_) {
@@ -92,7 +92,6 @@ if ($section === 'produk') {
             <td class="num"><?= num($p['qty']) ?></td>
             <td class="num"><?= rp($p['kotor']) ?></td>
             <td class="num <?= (float) $p['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['potongan']) ?></td>
-            <td class="num <?= (float) $p['pengembalian'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['pengembalian']) ?></td>
             <td class="num neg"><?= rp($p['biaya']) ?></td>
             <td class="num"><?= rp($p['bersih']) ?></td>
             <td class="num <?= $noHpp ? 'warn' : 'neg' ?>" <?= $noHpp ? 'title="Sebagian atau seluruh unit belum punya HPP"' : '' ?>>
@@ -105,7 +104,7 @@ if ($section === 'produk') {
           </tr>
         <?php endforeach; ?>
         <?php if ($produk === []): ?>
-          <tr><td colspan="13" class="muted">
+          <tr><td colspan="12" class="muted">
             Belum bisa dihitung. Perlu berkas pesanan <i>dan</i> berkas laporan penghasilan
             untuk periode yang sama.
           </td></tr>
@@ -117,7 +116,6 @@ if ($section === 'produk') {
           <td class="num"><?= num($pt['qty']) ?></td>
           <td class="num"><?= rp($pt['kotor']) ?></td>
           <td class="num neg"><?= rp($pt['potongan']) ?></td>
-          <td class="num neg"><?= rp($pt['pengembalian']) ?></td>
           <td class="num neg"><?= rp($pt['biaya']) ?></td>
           <td class="num"><?= rp($pt['bersih']) ?></td>
           <td class="num neg"><?= rp(-$pt['hpp']) ?></td>

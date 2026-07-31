@@ -380,9 +380,12 @@ SELECT
   s.platform,
   s.settlement_date,
   COUNT(*)               AS total_trx,
-  SUM(s.gross_amount)    AS pendapatan_kotor,
+  -- Sudah bersih dari pengembalian: barang yang direfund kembali ke penjual
+  -- sehingga penjualannya tidak pernah jadi. Nilai refund tetap disimpan di
+  -- kolom pengembalian untuk laporan Pengembalian yang terpisah.
+  SUM(s.gross_amount + s.refund_amount) AS pendapatan_kotor,
   SUM(s.total_potongan)  AS potongan,
-  SUM(s.refund_amount)   AS pengembalian,
+  SUM(-s.refund_amount)  AS pengembalian,
   SUM(s.adjustment_amount) AS penyesuaian,
   SUM(s.total_fee)       AS total_biaya,
   SUM(s.net_amount)      AS dana_diterima,

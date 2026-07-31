@@ -66,10 +66,12 @@ $coverage = Reports::costCoverageByMonth();
 $list     = Reports::costList($ym, $search, 500);
 
 // Ambang kewajaran marjin, bisa disesuaikan dari halaman.
-$warnPct = (float) (q('warn') ?? 70);
-$badPct  = (float) (q('bad') ?? 100);
-$warnPct = max(0.0, min(100.0, $warnPct));
-$badPct  = max($warnPct, min(200.0, $badPct));
+$minPct = (float) (q('min') ?? Reports::MARJIN_MIN);
+$maxPct = (float) (q('max') ?? Reports::MARJIN_MAX);
+$badPct = (float) (q('bad') ?? 100);
+$minPct = max(0.0, min(100.0, $minPct));
+$maxPct = max($minPct, min(100.0, $maxPct));
+$badPct = max($maxPct, min(200.0, $badPct));
 
 // Dua bagian yang harus menelusuri seluruh baris produk diambil lewat
 // permintaan terpisah supaya halaman langsung tampil.
@@ -78,7 +80,7 @@ $qs = static fn(array $p): string => http_build_query(
 );
 $lazyKurang = 'costs_section.php?' . $qs(['section' => 'kurang', 'ym' => $ym]);
 $lazyCek    = 'costs_section.php?' . $qs([
-    'section' => 'cek', 'ym' => $ym, 'warn' => $warnPct, 'bad' => $badPct,
+    'section' => 'cek', 'ym' => $ym, 'min' => $minPct, 'max' => $maxPct, 'bad' => $badPct,
     'platform' => platformFilter(),
 ]);
 
@@ -236,14 +238,16 @@ render_head('HPP Produk', 'costs');
 <div class="card">
   <h2>
     Uji kewajaran HPP yang sudah diisi
-    <a class="btn ghost sm" href="<?= e('export.php?report=cost_check' . ($ym !== null ? '&ym=' . urlencode($ym) : '') . '&warn=' . $warnPct . '&bad=' . $badPct) ?>">Ekspor CSV</a>
+    <a class="btn ghost sm" href="<?= e('export.php?report=cost_check' . ($ym !== null ? '&ym=' . urlencode($ym) : '') . '&min=' . $minPct . '&max=' . $maxPct . '&bad=' . $badPct) ?>">Ekspor CSV</a>
   </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Marjin laba = (dana bersih &minus; HPP) &divide; dana bersih. Marjin yang mendekati
-    <b><?= number_format($badPct, 0, ',', '.') ?>%</b> berarti HPP nyaris nol dibanding
-    pendapatannya &mdash; hampir pasti salah isi. Di atas
-    <b><?= number_format($warnPct, 0, ',', '.') ?>%</b> perlu dicek ulang.
-    Marjin negatif berarti HPP melebihi pendapatan (jual rugi).
+    Marjin laba = (dana bersih &minus; HPP) &divide; dana bersih. Marjin yang <b>wajar</b> berada di
+    rentang <b><?= number_format($minPct, 0, ',', '.') ?>%&ndash;<?= number_format($maxPct, 0, ',', '.') ?>%</b>
+    &mdash; nilai awal untuk produk kopi bubuk/biji. Di <b>bawah</b> rentang berarti marjinnya terlalu
+    tipis (harga jual kerendahan atau HPP kemahalan); di <b>atas</b> rentang berarti HPP kemungkinan
+    terlalu kecil atau belum lengkap. Mendekati
+    <b><?= number_format($badPct, 0, ',', '.') ?>%</b> hampir pasti salah isi, dan marjin negatif
+    berarti HPP melebihi pendapatan (jual rugi).
     <b>Klik nama produk</b> untuk melihat rinciannya &mdash; pecahan per platform, per bulan,
     dan daftar pesanannya.
   </p>

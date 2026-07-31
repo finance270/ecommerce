@@ -17,6 +17,7 @@ final class Perm
         'costs'       => ['HPP', 'costs.php', 'Impor & pantau HPP per produk'],
         'expenses'    => ['Beban', 'expenses.php', 'Impor & lihat beban operasional'],
         'settlements' => ['Settlement', 'settlements.php', 'Rincian dana yang dilepaskan platform'],
+        'refunds'     => ['Pengembalian', 'refunds.php', 'Refund per bulan, per produk, dan per transaksi'],
         'recon'       => ['Rekonsiliasi', 'reconciliation.php', 'Pesanan vs settlement'],
         'monitoring'  => ['Monitoring', 'monitoring.php', 'Kelengkapan data per periode'],
         'uploads'     => ['Riwayat Upload', 'uploads.php', 'Catatan berkas yang pernah diproses'],

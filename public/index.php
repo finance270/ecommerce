@@ -93,8 +93,11 @@ render_head('Dashboard', 'dashboard');
   </div>
   <div class="kpi">
     <div class="label">Pengembalian dana</div>
-    <div class="value"><?= rp($settle['pengembalian'] ?? 0, true) ?></div>
-    <div class="hint">refund ke pembeli</div>
+    <div class="value"><?= rp(abs((float) ($settle['pengembalian'] ?? 0)), true) ?></div>
+    <div class="hint">
+      sudah dipotong dari kotor
+      <?php if (Auth::can('refunds')): ?> &middot; <a href="refunds.php">rincian</a><?php endif; ?>
+    </div>
   </div>
 </div>
 

@@ -30,8 +30,8 @@ $rows = Db::all(
     $args
 );
 $sum = Db::one(
-    "SELECT COALESCE(SUM(gross_amount),0) kotor, COALESCE(SUM(total_fee),0) biaya,
-            COALESCE(SUM(net_amount),0) bersih
+    "SELECT COALESCE(SUM(" . Reports::KOTOR . "),0) kotor, COALESCE(SUM(total_fee),0) biaya,
+            COALESCE(SUM(net_amount),0) bersih, COALESCE(-SUM(refund_amount),0) refund
      FROM settlements s WHERE {$where}",
     $args
 ) ?? [];
@@ -76,7 +76,7 @@ render_head('Settlement', 'settlements');
           <td><?= platformBadge((string) $r['platform']) ?></td>
           <td class="nowrap"><a href="order.php?platform=<?= e($r['platform']) ?>&amp;id=<?= e($r['order_id']) ?>"><?= e($r['order_id']) ?></a></td>
           <td><span class="badge muted"><?= e($r['trx_type']) ?></span></td>
-          <td class="num"><?= rp($r['gross_amount']) ?></td>
+          <td class="num"><?= rp((float) $r['gross_amount'] + (float) $r['refund_amount']) ?></td>
           <td class="num neg"><?= rp($r['fee_komisi']) ?></td>
           <td class="num neg"><?= rp($r['fee_layanan']) ?></td>
           <td class="num neg"><?= rp($r['fee_administrasi']) ?></td>

@@ -47,9 +47,8 @@ $labaUsaha  = $labaKotor - $beban;
 
 // Semua baris pengurang dari pendapatan kotor sampai dana diterima bersih.
 $langkah = [
-    ['Pendapatan kotor', $tot['kotor'], 'Nilai penjualan sebelum diskon apa pun', 'head'],
+    ['Pendapatan kotor', $tot['kotor'], 'Nilai penjualan sebelum diskon, sudah dikurangi pengembalian', 'head'],
     ['Diskon &amp; voucher ditanggung penjual', $tot['potongan'], 'Potongan harga yang Anda tanggung sendiri', ''],
-    ['Pengembalian dana ke pembeli', $tot['refund'], 'Refund atas pesanan yang dikembalikan', ''],
     ['Biaya platform', $tot['biaya'], 'Komisi, layanan, administrasi, dan biaya lain', ''],
     ['Penyesuaian', $tot['penyesuaian'], 'Kompensasi & koreksi dari platform', ''],
     ['Selisih pencatatan', $tot['selisih'], 'Selisih arsip platform, ditampilkan apa adanya', ''],
@@ -170,13 +169,13 @@ render_head('Laba & Biaya', 'pnl');
     <table>
       <thead><tr>
         <th>Platform</th><th class="num">Pendapatan kotor</th>
-        <th class="num">Diskon &amp; voucher penjual</th><th class="num">Pengembalian dana</th>
+        <th class="num">Diskon &amp; voucher penjual</th>
         <th class="num">Biaya platform</th><th class="num">Penyesuaian</th>
         <th class="num">Selisih pencatatan</th><th class="num">Dana diterima bersih</th>
       </tr></thead>
       <tbody>
       <?php
-      $tb = ['kotor' => 0.0, 'potongan' => 0.0, 'refund' => 0.0, 'biaya' => 0.0,
+      $tb = ['kotor' => 0.0, 'potongan' => 0.0, 'biaya' => 0.0,
              'penyesuaian' => 0.0, 'selisih' => 0.0, 'bersih' => 0.0];
       foreach ($bridge as $b):
           foreach ($tb as $k => $_) {
@@ -186,21 +185,19 @@ render_head('Laba & Biaya', 'pnl');
           <td><?= platformBadge((string) $b['platform']) ?></td>
           <td class="num"><?= rp($b['kotor']) ?></td>
           <td class="num <?= $b['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['potongan']) ?></td>
-          <td class="num <?= $b['refund'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['refund']) ?></td>
           <td class="num neg"><?= rp($b['biaya']) ?></td>
           <td class="num <?= abs($b['penyesuaian']) > 0 ? '' : 'muted' ?>"><?= rp($b['penyesuaian']) ?></td>
           <td class="num <?= abs($b['selisih']) > 0 ? 'warn' : 'muted' ?>"><?= rp($b['selisih']) ?></td>
           <td class="num pos"><b><?= rp($b['bersih']) ?></b></td>
         </tr>
       <?php endforeach; ?>
-      <?php if ($bridge === []): ?><tr><td colspan="8" class="muted">Belum ada data settlement pada rentang ini.</td></tr><?php endif; ?>
+      <?php if ($bridge === []): ?><tr><td colspan="7" class="muted">Belum ada data settlement pada rentang ini.</td></tr><?php endif; ?>
       </tbody>
       <?php if (count($bridge) > 1): ?>
       <tfoot><tr>
         <td>Gabungan</td>
         <td class="num"><?= rp($tb['kotor']) ?></td>
         <td class="num neg"><?= rp($tb['potongan']) ?></td>
-        <td class="num neg"><?= rp($tb['refund']) ?></td>
         <td class="num neg"><?= rp($tb['biaya']) ?></td>
         <td class="num"><?= rp($tb['penyesuaian']) ?></td>
         <td class="num"><?= rp($tb['selisih']) ?></td>
@@ -269,7 +266,7 @@ render_head('Laba & Biaya', 'pnl');
     <table>
       <thead><tr>
         <th>Bulan</th><th>Platform</th><th class="num">Pendapatan kotor</th>
-        <th class="num">Diskon &amp; voucher</th><th class="num">Pengembalian</th>
+        <th class="num">Diskon &amp; voucher</th>
         <th class="num">Biaya platform</th><th class="num">Penyesuaian</th><th class="num">Selisih</th>
         <th class="num">Dana diterima bersih</th><th class="num">Marjin</th>
       </tr></thead>
@@ -282,7 +279,6 @@ render_head('Laba & Biaya', 'pnl');
           <td><?= platformBadge((string) $b['platform']) ?></td>
           <td class="num"><?= rp($bk) ?></td>
           <td class="num <?= (float) $b['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['potongan']) ?></td>
-          <td class="num <?= (float) $b['pengembalian'] < 0 ? 'neg' : 'muted' ?>"><?= rp($b['pengembalian']) ?></td>
           <td class="num neg"><?= rp($b['total_biaya']) ?></td>
           <td class="num <?= abs((float) $b['penyesuaian']) > 0 ? '' : 'muted' ?>"><?= rp($b['penyesuaian']) ?></td>
           <td class="num <?= abs((float) $b['selisih']) > 0 ? 'warn' : 'muted' ?>"><?= rp($b['selisih']) ?></td>
@@ -290,7 +286,7 @@ render_head('Laba & Biaya', 'pnl');
           <td class="num muted"><?= $bk > 0 ? number_format($bb / $bk * 100, 1, ',', '.') . '%' : '-' ?></td>
         </tr>
       <?php endforeach; ?>
-      <?php if ($bulanan === []): ?><tr><td colspan="10" class="muted">Belum ada data.</td></tr><?php endif; ?>
+      <?php if ($bulanan === []): ?><tr><td colspan="9" class="muted">Belum ada data.</td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>

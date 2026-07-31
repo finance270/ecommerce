@@ -43,6 +43,7 @@ $tabLaporan = [
     'unsettled' => 'recon', 'unmatched' => 'monitoring', 'monitoring' => 'monitoring',
     'missing_cost' => 'costs', 'cost_check' => 'costs',
     'expenses' => 'expenses',
+    'refunds' => 'refunds', 'refund_product' => 'refunds',
 ];
 if (!isset($tabLaporan[$report]) || !Auth::can($tabLaporan[$report])) {
     http_response_code(403);
@@ -93,7 +94,8 @@ switch ($report) {
         if ($platform !== null) { $w[] = 'platform = ?';         $a[] = $platform; }
         $rows = Db::all(
             'SELECT platform, order_id, trx_type, settlement_date, order_time,
-                    gross_amount, refund_amount, total_fee, net_amount,
+                    (gross_amount + refund_amount) AS gross_amount,
+                    -refund_amount AS refund_amount, total_fee, net_amount,
                     fee_komisi, fee_layanan, fee_administrasi, fee_pembayaran, fee_proses,
                     fee_pengiriman, fee_afiliasi, fee_iklan, fee_kampanye, fee_pajak,
                     fee_asuransi, fee_fulfillment, fee_promosi, fee_lainnya
@@ -163,9 +165,10 @@ switch ($report) {
         if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
             $ym = null;
         }
-        $warn = (float) (q('warn') ?? 70);
-        $bad  = (float) (q('bad') ?? 100);
-        $rows = Reports::costMarginCheck($ym, $platform, $warn, $bad);
+        $min = (float) (q('min') ?? Reports::MARJIN_MIN);
+        $max = (float) (q('max') ?? Reports::MARJIN_MAX);
+        $bad = (float) (q('bad') ?? 100);
+        $rows = Reports::costMarginCheck($ym, $platform, $min, $max, $bad);
         csvOut("uji_kewajaran_hpp_{$stamp}.csv", [
             'Status', 'Bulan', 'Produk', 'Variasi', 'Qty', 'HPP per Unit',
             'Bersih per Unit', 'Total HPP', 'Total Bersih', 'Laba', 'Marjin %', 'Catatan',
@@ -205,12 +208,12 @@ switch ($report) {
         $rows = Reports::productProfit($from, $to, $platform, 5000, (string) $psort);
         csvOut("laba_per_produk_{$stamp}.csv", [
             'Platform', 'Produk', 'Pesanan', 'Qty', 'Pendapatan Kotor',
-            'Diskon & Voucher Penjual', 'Pengembalian Dana', 'Biaya Platform',
+            'Diskon & Voucher Penjual', 'Biaya Platform',
             'Dana Diterima Bersih', 'HPP', 'Laba', 'Marjin Laba %', 'Qty Tanpa HPP',
         ], array_map(static fn($r) => [
             $r['platform'], $r['produk'], $r['pesanan'], $r['qty'],
             round((float) $r['kotor'], 2), round((float) $r['potongan'], 2),
-            round((float) $r['pengembalian'], 2), round((float) $r['biaya'], 2),
+            round((float) $r['biaya'], 2),
             round((float) $r['bersih'], 2), round((float) $r['hpp'], 2),
             round((float) $r['laba'], 2),
             $r['marjin_laba'] === null ? '' : round((float) $r['marjin_laba'], 2),
@@ -222,12 +225,12 @@ switch ($report) {
         $rows = Reports::productNet($from, $to, $platform, 5000, (string) $psort);
         csvOut("laba_bersih_per_produk_{$stamp}.csv", [
             'Platform', 'Produk', 'Pesanan', 'Qty', 'Pendapatan Kotor',
-            'Diskon & Voucher Penjual', 'Pengembalian Dana', 'Biaya Platform',
+            'Diskon & Voucher Penjual', 'Biaya Platform',
             'Dana Diterima Bersih', 'Marjin %',
         ], array_map(static fn($r) => [
             $r['platform'], $r['produk'], $r['pesanan'], $r['qty'],
             round((float) $r['kotor'], 2), round((float) $r['potongan'], 2),
-            round((float) $r['pengembalian'], 2), round((float) $r['biaya'], 2),
+            round((float) $r['biaya'], 2),
             round((float) $r['bersih'], 2),
             $r['marjin'] === null ? '' : round((float) $r['marjin'], 2),
         ], $rows));
@@ -236,12 +239,32 @@ switch ($report) {
         $rows = Reports::monthlySettlement($from, $to, $platform);
         csvOut("rekap_bulanan_settlement_{$stamp}.csv", [
             'Bulan', 'Platform', 'Transaksi', 'Pendapatan Kotor', 'Diskon & Voucher Penjual',
-            'Pengembalian Dana', 'Biaya Platform', 'Penyesuaian', 'Selisih Pencatatan',
+            'Biaya Platform', 'Penyesuaian', 'Selisih Pencatatan',
             'Dana Diterima Bersih',
         ], array_map(static fn($r) => [
             $r['bulan'], $r['platform'], $r['trx'], $r['pendapatan_kotor'], $r['potongan'],
-            $r['pengembalian'], $r['total_biaya'], $r['penyesuaian'],
+            $r['total_biaya'], $r['penyesuaian'],
             round((float) $r['selisih'], 2), $r['dana_diterima'],
+        ], $rows));
+
+    case 'refunds':
+        $rows = Reports::refundList($from, $to, $platform, 100000);
+        csvOut("pengembalian_{$stamp}.csv", [
+            'Platform', 'No Pesanan', 'Tanggal Dana Dilepas', 'Jenis Transaksi',
+            'Kotor Sebelum Refund', 'Pengembalian', 'Dana Diterima',
+        ], array_map(static fn($r) => [
+            $r['platform'], $r['order_id'], $r['settlement_date'], $r['trx_type'],
+            round((float) $r['gross_amount'], 2), round((float) $r['refund'], 2),
+            round((float) $r['net_amount'], 2),
+        ], $rows));
+
+    case 'refund_product':
+        $rows = Reports::refundByProduct($from, $to, $platform, 5000);
+        csvOut("pengembalian_per_produk_{$stamp}.csv", [
+            'Produk', 'Variasi', 'Pesanan', 'Qty Retur', 'Nilai Pengembalian',
+        ], array_map(static fn($r) => [
+            $r['produk'], $r['variasi'], $r['pesanan'], $r['qty_retur'],
+            round((float) $r['refund'], 2),
         ], $rows));
 
     case 'products':
