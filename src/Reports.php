@@ -26,6 +26,28 @@ final class Reports
      */
     public const KOTOR = '(gross_amount + refund_amount)';
 
+    /**
+     * Penjualan bersih - dasar penyebut seluruh persentase marjin.
+     *
+     *     penjualan bersih = pendapatan kotor - potongan & diskon
+     *
+     * Pendapatan kotor di aplikasi ini sudah bersih dari pengembalian dana
+     * (lihat const KOTOR), jadi yang tersisa dikurangkan hanyalah potongan
+     * dan diskon yang ditanggung penjual.
+     *
+     * Biaya platform (komisi, layanan, ongkir) SENGAJA tidak dikurangkan di
+     * sini: itu biaya menjual, bukan pengurang penjualan. Marjin karena itu
+     * berarti "berapa persen dari penjualan bersih yang benar-benar jadi
+     * laba", ukuran yang sama dengan yang dipakai di laporan laba rugi pada
+     * umumnya.
+     *
+     * @param array{kotor?:mixed,potongan?:mixed} $r baris hasil query
+     */
+    public static function penjualanBersih(array $r): float
+    {
+        return (float) ($r['kotor'] ?? 0) - abs((float) ($r['potongan'] ?? 0));
+    }
+
     /** Bangun potongan WHERE + parameter untuk filter standar. */
     private static function filter(string $dateCol, ?string $from, ?string $to, ?string $platform, string $alias = ''): array
     {
@@ -536,10 +558,15 @@ final class Reports
                     SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END)  AS qty_tanpa_hpp,
                     SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
                         - SUM(i.qty * COALESCE(pc.cost_per_unit, 0))    AS laba,
-                    CASE WHEN SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) > 0
+                    -- Penyebutnya PENJUALAN BERSIH (kotor - potongan), bukan
+                    -- dana yang diterima: biaya platform adalah biaya menjual,
+                    -- bukan pengurang penjualan.
+                    CASE WHEN SUM((st.gross_amount + st.total_potongan)
+                                  * i.subtotal_before_disc / o.items_subtotal_before) > 0
                          THEN (SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
                                - SUM(i.qty * COALESCE(pc.cost_per_unit, 0)))
-                              / SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) * 100
+                              / SUM((st.gross_amount + st.total_potongan)
+                                    * i.subtotal_before_disc / o.items_subtotal_before) * 100
                          ELSE NULL END AS marjin_laba
              FROM ({$sub}) st
              STRAIGHT_JOIN orders o
@@ -695,6 +722,8 @@ final class Reports
                     MAX(i.cost_key)       AS cost_key,
                     MAX(pc.cost_per_unit) AS hpp_unit,
                     SUM(i.qty)            AS qty,
+                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
+                    SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
                     SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     SUM(i.qty * pc.cost_per_unit) AS hpp
              FROM ({$sub}) st
@@ -714,10 +743,12 @@ final class Reports
             $hpp    = (float) $r['hpp'];
             $qty    = (int) $r['qty'];
             $laba   = $bersih - $hpp;
+            $jual   = self::penjualanBersih($r);
 
             $r['laba'] = $laba;
+            $r['penjualan_bersih'] = $jual;
             $r['bersih_unit'] = $qty > 0 ? $bersih / $qty : 0.0;
-            $r['marjin'] = $bersih > 0 ? $laba / $bersih * 100 : null;
+            $r['marjin'] = $jual > 0 ? $laba / $jual * 100 : null;
 
             // Dibandingkan pada ketelitian yang sama dengan yang ditampilkan
             // (1 desimal). Sejak nilai 0 pada template diabaikan, HPP selalu
@@ -725,9 +756,9 @@ final class Reports
             // tanpa pembulatan ini ambang 100% tidak akan pernah tercapai
             // walau HPP-nya cuma Rp 1.
             $m = $r['marjin'] === null ? null : round($r['marjin'], 1);
-            if ($bersih <= 0) {
+            if ($jual <= 0) {
                 $r['status'] = 'periksa';
-                $r['alasan'] = 'Pendapatan bersih nol atau negatif';
+                $r['alasan'] = 'Penjualan bersih nol atau negatif';
             } elseif ($laba < 0) {
                 $r['status'] = 'rugi';
                 $r['alasan'] = 'HPP lebih besar dari pendapatan bersih (jual rugi)';
@@ -876,10 +907,13 @@ final class Reports
         $hpp    = (float) ($r['hpp'] ?? 0);
         $qty    = (int) ($r['qty'] ?? 0);
 
-        $r['laba']        = $bersih - $hpp;
-        $r['marjin']      = $bersih > 0 ? ($bersih - $hpp) / $bersih * 100 : null;
-        $r['bersih_unit'] = $qty > 0 ? $bersih / $qty : 0.0;
-        $r['laba_unit']   = $qty > 0 ? ($bersih - $hpp) / $qty : 0.0;
+        $jual = self::penjualanBersih($r);
+
+        $r['laba']             = $bersih - $hpp;
+        $r['penjualan_bersih'] = $jual;
+        $r['marjin']           = $jual > 0 ? ($bersih - $hpp) / $jual * 100 : null;
+        $r['bersih_unit']      = $qty > 0 ? $bersih / $qty : 0.0;
+        $r['laba_unit']        = $qty > 0 ? ($bersih - $hpp) / $qty : 0.0;
     }
 
     /** Jumlah pesanan yang memuat produk ini (untuk penomoran halaman). */

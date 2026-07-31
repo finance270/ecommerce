@@ -280,8 +280,28 @@ membingungkan.
 Untuk produk yang HPP-nya **sudah** diisi, menu **HPP** menguji kewajarannya:
 
 ```
-marjin laba = (dana bersih − HPP) ÷ dana bersih
+marjin laba = (dana bersih − HPP) ÷ PENJUALAN BERSIH
 ```
+
+**Penjualan bersih** adalah penyebut seluruh persentase marjin di aplikasi ini:
+
+```
+penjualan bersih = pendapatan kotor − potongan & diskon
+```
+
+Pendapatan kotor sudah bersih dari pengembalian dana (lihat *Pengembalian dana* di atas), jadi
+yang tersisa dikurangkan hanyalah potongan dan diskon yang ditanggung penjual. **Biaya platform
+sengaja tidak dikurangkan dari penyebut** — komisi, layanan, dan ongkir adalah biaya *menjual*,
+bukan pengurang penjualan. Marjin karena itu berarti *"berapa persen dari penjualan bersih yang
+benar-benar jadi laba"*, ukuran yang sama dengan laporan laba rugi pada umumnya.
+
+Dasar ini dipakai seragam di **uji kewajaran HPP**, **rincian produk**, **laba per produk** pada
+Laba & Biaya, **ekspor CSV**, dan **simulasi harga** — supaya satu produk tidak menunjukkan angka
+marjin berbeda-beda antar halaman.
+
+> Marjin dengan penyebut ini **lebih kecil** daripada bila dibagi dana yang diterima. Kalau
+> rentang wajar Anda dulu dikalibrasi terhadap penyebut lama, angkanya perlu diturunkan —
+> ketiga ambangnya memang bisa diubah dari halaman.
 
 Yang dianggap wajar adalah sebuah **rentang**, bukan sekadar batas atas. Nilai awalnya
 **60%–80%**, angka yang sehat untuk produk kopi bubuk/biji:
@@ -292,7 +312,7 @@ Yang dianggap wajar adalah sebuah **rentang**, bukan sekadar batas atas. Nilai a
 | Marjin tipis | di bawah 60% | harga jual terlalu rendah atau HPP terlalu tinggi |
 | Perlu dicek | di atas 80% | HPP kemungkinan terlalu kecil atau belum lengkap |
 | Sangat tidak wajar | marjin ≥ 100% | HPP nyaris nol dibanding pendapatan, hampir pasti salah |
-| Jual rugi | marjin negatif | HPP melebihi pendapatan bersih |
+| Jual rugi | marjin negatif | HPP melebihi dana yang diterima |
 
 Ketiga ambang (60%, 80%, 100%) bisa diubah langsung dari halaman karena tiap jenis produk
 berbeda. Tabelnya menampilkan **HPP per unit** berdampingan dengan **pendapatan bersih per unit**,
@@ -347,11 +367,14 @@ harga yang benar-benar Anda pasang di Tokopedia/Shopee. Ini **bukan** pendapatan
 settlement: pendapatan kotor di laporan sudah dikurangi pengembalian dana, jadi kalau dipakai
 di sini harga yang muncul akan lebih rendah daripada harga di etalase.
 
-Persentase pengurangnya diambil dari **pesanan terakhir yang sudah selesai dan lengkap biayanya**
-pada platform yang dipilih — bukan rerata beberapa bulan. Tarif komisi dan biaya layanan berubah
-dari waktu ke waktu, jadi pesanan paling akhir mencerminkan tarif yang berlaku sekarang sedangkan
-rerata masih membawa tarif lama. Pesanan yang batal atau yang biayanya belum tercatat tidak
-dipakai, karena tidak mewakili tarif apa pun. **HPP** diambil dari **bulan terakhir yang terisi**.
+Persentase pengurangnya diambil dari **pesanan terakhir yang sudah selesai dan lengkap biayanya**.
+Pesanan yang batal atau yang biayanya belum tercatat tidak dipakai, karena tidak mewakili tarif
+apa pun. **HPP** diambil dari **bulan terakhir yang terisi**.
+
+Histori terakhir **tiap platform** ditampilkan berdampingan — nomor pesanan, tanggal, harga jual
+per unit, persentase potongan, dan persentase biaya platform. Bila platform dibiarkan "Semua
+platform", yang dipakai sebagai dasar simulasi adalah yang **harga jualnya paling tinggi**; baris
+lain punya tombol **Pakai ini** untuk berpindah.
 
 Halaman menyebutkan nomor pesanan, tanggal dana dilepas, dan bulan HPP yang dipakai, sehingga
 angkanya bisa ditelusuri.

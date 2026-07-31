@@ -9,12 +9,17 @@ require_once __DIR__ . '/_layout.php';
  * Halaman berdiri sendiri - dibuka di tab baru dari uji kewajaran HPP - supaya
  * bisa dipakai fokus dan dicetak apa adanya jadi PDF.
  *
- * Dasarnya adalah PESANAN TERAKHIR yang sudah selesai dan lengkap biayanya,
- * bukan rerata beberapa bulan: tarif komisi dan biaya layanan berubah dari
- * waktu ke waktu, jadi pesanan paling akhir yang mencerminkan tarif berlaku.
- * HPP diambil dari bulan terakhir yang ada isinya. Keduanya hanya nilai awal -
+ * Dasarnya adalah PESANAN TERAKHIR yang sudah selesai dan lengkap biayanya.
+ * Histori terakhir tiap platform ditampilkan berdampingan; bila pengguna belum
+ * memilih platform, yang dipakai adalah yang HARGA JUALNYA PALING TINGGI.
+ * HPP diambil dari bulan terakhir yang ada isinya. Semuanya hanya nilai awal -
  * seluruh angka bisa diubah manual, dan tombol Reset mengembalikannya ke
  * histori terakhir.
+ *
+ * Seluruh persentase marjin memakai penyebut PENJUALAN BERSIH, yaitu harga
+ * jual dikurangi pajak, pengembalian, dan potongan/diskon - lihat
+ * Reports::penjualanBersih(). Biaya platform tidak ikut dikurangkan dari
+ * penyebut karena itu biaya menjual, bukan pengurang penjualan.
  */
 
 Auth::requireTab('costs');
@@ -39,7 +44,35 @@ if ($ident === null) {
     exit;
 }
 
-$ref   = Reports::latestSettledOrder($key, $platform);
+// Histori terakhir tiap platform ditampilkan berdampingan. Kalau pengguna
+// belum memilih platform, yang dipakai sebagai dasar simulasi adalah yang
+// HARGA JUALNYA PALING TINGGI - itu patokan teratas untuk menetapkan harga.
+$perPf = [];
+foreach (['tokopedia', 'shopee'] as $pf) {
+    $o = Reports::latestSettledOrder($key, $pf);
+    if ($o === null) {
+        continue;
+    }
+    $d = Reports::pricingFromOrder($key, (string) $o['platform'], (string) $o['order_id']);
+    if ($d['qty'] === 0) {
+        continue;
+    }
+    $perPf[$pf] = ['ref' => $o, 'dasar' => $d];
+}
+
+if ($platform !== null) {
+    $ref = $perPf[$platform]['ref'] ?? null;
+} else {
+    $ref = null;
+    $tertinggi = -1.0;
+    foreach ($perPf as $x) {
+        if ((float) $x['dasar']['harga_unit'] > $tertinggi) {
+            $tertinggi = (float) $x['dasar']['harga_unit'];
+            $ref = $x['ref'];
+        }
+    }
+}
+
 $hppDb = Reports::latestCost($key);
 $judul = (string) $ident['produk'];
 
@@ -124,7 +157,58 @@ $pphUnit = $dppUnit * $pphPersen / 100;
 
 $bersihUnit  = $perUnit((float) $dasar['bersih']);
 $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
+
+// Penyebut seluruh persentase marjin: penjualan bersih, yaitu harga jual
+// dikurangi pajak, pengembalian, dan potongan/diskon. Biaya platform TIDAK
+// ikut dikurangkan - itu biaya menjual, bukan pengurang penjualan.
+$jualBersihUnit = $hargaUnit - $ppnUnit - $pphUnit
+                - $perUnit((float) $dasar['refund'])
+                - $perUnit((float) $dasar['potongan']);
+$labaUnit   = $setelahUnit - $hppUnit;
+$marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit * 100 : null;
 ?>
+
+<?php if (count($perPf) > 1): ?>
+<div class="card">
+  <h2>Histori terakhir tiap platform</h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:12px">
+    Pesanan terakhir yang selesai dan lengkap biayanya di masing-masing platform. Yang dipakai
+    sebagai dasar simulasi adalah yang <b>harga jualnya paling tinggi</b>
+    <?= $platform !== null ? ' (saat ini dikunci ke platform pilihan Anda)' : '' ?>.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Platform</th><th>Pesanan terakhir</th><th>Dana dilepas</th>
+        <th class="num">Harga jual/unit</th><th class="num">Potongan</th>
+        <th class="num">Biaya platform</th><th></th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($perPf as $pf => $x):
+          $dipakai = $ref !== null && (string) $ref['order_id'] === (string) $x['ref']['order_id']
+                     && (string) $ref['platform'] === (string) $x['ref']['platform']; ?>
+        <tr<?= $dipakai ? ' style="background:rgba(0,0,0,.02)"' : '' ?>>
+          <td><?= platformBadge($pf) ?></td>
+          <td class="nowrap"><code class="k"><?= e($x['ref']['order_id']) ?></code></td>
+          <td class="nowrap"><?= shortDate($x['ref']['settlement_date']) ?></td>
+          <td class="num"><b><?= rp((float) $x['dasar']['harga_unit']) ?></b></td>
+          <td class="num neg"><?= num((float) $x['dasar']['potongan_pct'], 2) ?>%</td>
+          <td class="num neg"><?= num((float) $x['dasar']['biaya_pct'], 2) ?>%</td>
+          <td class="nowrap">
+            <?php if ($dipakai): ?>
+              <span class="badge ok">dipakai</span>
+            <?php else: ?>
+              <a class="btn ghost sm no-print"
+                 href="simulasi.php?key=<?= e($key) ?>&amp;platform=<?= e($pf) ?>">Pakai ini</a>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 
 <div class="card">
   <h2>Dasar perhitungan</h2>
@@ -134,8 +218,6 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
     <code class="k"><?= e($ref['order_id']) ?></code>,
     dana dilepas <b><?= shortDate($ref['settlement_date']) ?></b>
     (<?= num($qty) ?> unit produk ini di dalamnya).
-    Tarif komisi berubah dari waktu ke waktu, jadi pesanan terakhir lebih mewakili
-    tarif yang berlaku sekarang daripada rerata beberapa bulan.
     <br>
     <?php if ($hppDb !== null): ?>
       HPP diambil dari bulan terakhir yang terisi: <b><?= e($hppDb['period_ym']) ?></b>.
@@ -229,6 +311,12 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
         </tr>
         <?php endif; ?>
 
+        <tr style="background:rgba(0,0,0,.02)">
+          <td><b>Penjualan bersih</b></td>
+          <td class="num"><b><?= rp($jualBersihUnit) ?></b></td>
+          <td class="num"><b><?= num($jualBersihUnit / $hargaUnit * 100, 2) ?>%</b></td>
+          <td class="muted" style="font-size:11.5px">dasar hitung marjin</td>
+        </tr>
         <tr>
           <td class="muted">Dana dari platform (sebelum pajak)</td>
           <td class="num muted"><?= rp($bersihUnit) ?></td>
@@ -249,14 +337,9 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
         </tr>
         <tr style="background:rgba(0,0,0,.02)">
           <td><b>Laba bersih sekarang</b></td>
-          <td class="num <?= ($setelahUnit - $hppUnit) < 0 ? 'neg' : 'pos' ?>">
-            <b><?= rp($setelahUnit - $hppUnit) ?></b>
-          </td>
-          <td class="num"><b>marjin
-            <?= $setelahUnit > 0 && $hppUnit > 0
-                ? num(($setelahUnit - $hppUnit) / $setelahUnit * 100, 1) . '%'
-                : '-' ?></b></td>
-          <td></td>
+          <td class="num <?= $labaUnit < 0 ? 'neg' : 'pos' ?>"><b><?= rp($labaUnit) ?></b></td>
+          <td class="num"><b>marjin <?= $marjinKini === null ? '-' : num($marjinKini, 1) . '%' ?></b></td>
+          <td class="muted" style="font-size:11.5px">dari penjualan bersih</td>
         </tr>
       </tbody>
     </table>
@@ -365,6 +448,9 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
           <tr><td>Penyesuaian &amp; selisih</td><td class="num" id="oLain">-</td>
               <td class="num muted"><?= num(abs((float) $dasar['lain_pct']), 2) ?>%</td></tr>
         <?php endif; ?>
+        <tr style="background:rgba(0,0,0,.02)">
+            <td><b>Penjualan bersih</b> <span class="muted" style="font-size:11.5px">dasar marjin</span></td>
+            <td class="num" id="oJual"><b>-</b></td><td class="num" id="pJual"><b>-</b></td></tr>
         <tr><td class="muted">Dana dari platform (sebelum pajak)</td>
             <td class="num muted" id="oPlatform">-</td><td class="num muted" id="pPlatform">-</td></tr>
         <tr style="background:rgba(0,0,0,.02)">
@@ -403,12 +489,6 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
     <?php endif; ?>
   </div>
 
-  <p class="help" style="margin-top:12px">
-    Persentase pengembalian, potongan, dan biaya platform dianggap <b>tetap</b> terhadap harga jual.
-    Kalau harga naik, komisi dan biaya ikut naik sebanding &mdash; itu sebabnya menaikkan harga
-    tidak menaikkan marjin seluruhnya. Angka ini panduan, bukan janji: harga baru bisa mengubah
-    jumlah penjualan.
-  </p>
 </div>
 
 <script>
@@ -483,16 +563,28 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
                - awal.refPct - awal.lainPct;
   }
 
+  /**
+   * Porsi PENJUALAN BERSIH: harga jual dikurangi pajak, pengembalian, dan
+   * potongan. Biaya platform tidak ikut - itu biaya menjual, bukan pengurang
+   * penjualan. Inilah penyebut seluruh persentase marjin.
+   */
+  function jualPct() {
+    return 100 - ppnPorsi() - pphPorsi() - awal.refPct - ambil(elPot, awal.potPct);
+  }
+
   function render(harga) {
     var potPct = ambil(elPot, awal.potPct);
     var biPct  = ambil(elBi, awal.biPct);
     var hpp    = hppEfektif();
     var net    = netPct();
     var bersih = harga * net / 100;
+    var jual   = harga * jualPct() / 100;
     var laba   = bersih - hpp;
-    var marjin = bersih > 0 ? laba / bersih * 100 : null;
+    var marjin = jual > 0 ? laba / jual * 100 : null;
 
     var pPpn = ppnPorsi(), pPph = pphPorsi(), pPlat = platformPct();
+    set('oJual', rp(jual), true);
+    set('pJual', pc(jualPct(), 2), true);
     set('oPpn', rp(-harga * pPpn / 100));
     set('pPpn', pc(pPpn, 2));
     set('oDpp', rp(harga * (100 - pPpn) / 100));
@@ -547,11 +639,12 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
       pesan = 'Marjin <b>' + pc(marjin) + '</b> berada di rentang wajar ('
             + marjinWajarMin + '&ndash;' + marjinWajarMax + '%).';
     }
-    // Marjin sebelum pajak: angka yang sebanding dengan uji kewajaran HPP,
-    // supaya tidak terbaca sebagai selisih yang tidak dijelaskan.
+    // Marjin sebelum pajak: penyebutnya penjualan bersih tanpa lapisan pajak,
+    // supaya sebanding dengan angka di uji kewajaran HPP.
     var bersihPlat = harga * pPlat / 100;
-    if (bersihPlat > 0 && hpp > 0) {
-      var mSebelum = (bersihPlat - hpp) / bersihPlat * 100;
+    var jualPra    = harga * (100 - awal.refPct - potPct) / 100;
+    if (jualPra > 0 && hpp > 0) {
+      var mSebelum = (bersihPlat - hpp) / jualPra * 100;
       pesan += ' <span class="muted">Sebelum pajak marjinnya ' + pc(mSebelum)
              + ' &mdash; itu angka yang dipakai uji kewajaran HPP.</span>';
     }
@@ -573,20 +666,23 @@ $setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
   function dariHarga() {
     var harga = ambil(elHarga, awal.harga);
     if (harga <= 0) { return; }
-    var net = netPct();
-    var bersih = harga * net / 100;
-    var hpp = hppEfektif();
-    elMarjin.value = (bersih > 0 ? (bersih - hpp) / bersih * 100 : 0).toFixed(1);
+    var bersih = harga * netPct() / 100;
+    var jual   = harga * jualPct() / 100;
+    var hpp    = hppEfektif();
+    elMarjin.value = (jual > 0 ? (bersih - hpp) / jual * 100 : 0).toFixed(1);
     render(harga);
   }
 
   function dariMarjin() {
     var m = parseFloat(elMarjin.value);
-    var net = netPct();
+    var net = netPct(), jual = jualPct();
     var hpp = hppEfektif();
-    if (!isFinite(m) || m >= 100 || net <= 0 || hpp <= 0) { return; }
-    // bersih = hpp / (1 - m/100), lalu harga = bersih / (net/100)
-    var harga = (hpp / (1 - m / 100)) * 100 / net;
+    if (!isFinite(m) || jual <= 0 || hpp <= 0) { return; }
+    // laba = harga*net/100 - hpp, dan marjin = laba / (harga*jual/100).
+    // Diselesaikan untuk harga:  harga = hpp / (net/100 - m/100 * jual/100)
+    var penyebut = net / 100 - (m / 100) * (jual / 100);
+    if (penyebut <= 0) { return; }
+    var harga = hpp / penyebut;
     if (!isFinite(harga) || harga <= 0) { return; }
     elHarga.value = Math.ceil(harga / 100) * 100;   // dibulatkan ke atas per Rp 100
     render(parseFloat(elHarga.value));
