@@ -453,4 +453,13 @@ render_head('Pemasangan', '');
     </ul>
   </div>
 <?php endif; ?>
+
+<div class="card" style="max-width:640px;margin-top:16px">
+  <h2>Pembaruan dari GitHub</h2>
+  <p class="help" style="margin-top:-4px">
+    Supaya aplikasi bisa ditarik langsung dari GitHub - tanpa unduh zip lalu unggah lagi -
+    server perlu memenuhi beberapa syarat. Halaman berikut memeriksanya tanpa mengubah apa pun.
+  </p>
+  <p style="margin-bottom:0"><a class="btn ghost" href="cek-lingkungan.php">Cek lingkungan server</a></p>
+</div>
 <?php render_foot(); ?>
