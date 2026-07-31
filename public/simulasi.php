@@ -146,26 +146,15 @@ $pphSudahDipungut = (float) $dasar['pajak_platform'] > 0;
 $ppnPersen = Tax::PPN_PERSEN;
 $pphPersen = $pphSudahDipungut ? 0.0 : Tax::PPH_PERSEN;
 
-// Porsi terhadap harga jual (harga sudah termasuk PPN).
-$ppnPorsi = $ppnPersen / (100 + $ppnPersen) * 100;      // 11%  -> 9,9099%
-$dppPorsi = 100 - $ppnPorsi;
-$pphPorsi = $pphPersen * $dppPorsi / 100;               // 0,5% dari DPP
-
-$ppnUnit = $hargaUnit * $ppnPorsi / 100;
-$dppUnit = $hargaUnit - $ppnUnit;
-$pphUnit = $dppUnit * $pphPersen / 100;
-
-$bersihUnit  = $perUnit((float) $dasar['bersih']);
-$setelahUnit = $bersihUnit - $ppnUnit - $pphUnit;
-
-// Penyebut seluruh persentase marjin: penjualan bersih, yaitu harga jual
-// dikurangi pajak, pengembalian, dan potongan/diskon. Biaya platform TIDAK
-// ikut dikurangkan - itu biaya menjual, bukan pengurang penjualan.
-$jualBersihUnit = $hargaUnit - $ppnUnit - $pphUnit
-                - $perUnit((float) $dasar['refund'])
-                - $perUnit((float) $dasar['potongan']);
-$labaUnit   = $setelahUnit - $hppUnit;
-$marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit * 100 : null;
+// Rantai nilai per unit, memakai urutan baku yang sama dengan Laba & Biaya.
+$c = Reports::rantaiLaba([
+    'kotor'    => $hargaUnit,
+    'refund'   => $perUnit((float) $dasar['refund']),
+    'potongan' => $perUnit((float) $dasar['potongan']),
+    'biaya'    => $perUnit((float) $dasar['biaya']),
+    'lain'     => $perUnit((float) $dasar['lain']),
+    'hpp'      => $hppUnit,
+], $ppnPersen, $pphPersen);
 ?>
 
 <?php if (count($perPf) > 1): ?>
@@ -230,55 +219,39 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>Komponen</th><th class="num">Per unit</th><th class="num">% dari harga jual</th><th style="width:120px"></th>
+        <th>Komponen</th><th class="num">Per unit (Rp)</th><th class="num">Persentase</th>
+        <th>Catatan / acuan</th><th style="width:120px"></th>
       </tr></thead>
       <tbody>
         <tr>
           <td><b>Harga jual terdaftar</b></td>
-          <td class="num"><b><?= rp($hargaUnit) ?></b></td>
+          <td class="num"><b><?= rp($c['harga']) ?></b></td>
           <td class="num muted">100,00%</td>
-          <td class="muted" style="font-size:11.5px">termasuk PPN, sebelum diskon</td>
+          <td class="muted" style="font-size:11.5px">% dari harga jual</td>
+          <td></td>
         </tr>
-        <tr>
-          <td>PPN <?= num($ppnPersen, 0) ?>% keluaran</td>
-          <td class="num neg"><?= rp(-$ppnUnit) ?></td>
-          <td class="num neg"><?= num($ppnPorsi, 2) ?>%</td>
-          <td class="muted" style="font-size:11.5px">dititipkan ke negara</td>
-        </tr>
-        <tr>
-          <td class="muted">= Peredaran bruto (DPP, tanpa PPN)</td>
-          <td class="num muted"><?= rp($dppUnit) ?></td>
-          <td class="num muted"><?= num($dppPorsi, 2) ?>%</td>
-          <td class="muted" style="font-size:11.5px">dasar hitung PPh</td>
-        </tr>
-        <?php if ($pphPersen > 0): ?>
-        <tr>
-          <td>PPh Pasal 22 e-commerce <?= num($pphPersen, 1) ?>%</td>
-          <td class="num neg"><?= rp(-$pphUnit) ?></td>
-          <td class="num neg"><?= num($pphPorsi, 2) ?>%</td>
-          <td class="muted" style="font-size:11.5px">dipungut marketplace</td>
-        </tr>
-        <?php endif; ?>
-        <?php if ($dasar['refund'] > 0): ?>
+
+        <?php if ($c['refund'] > 0): ?>
         <tr>
           <td>Pengembalian dana (refund)</td>
-          <td class="num neg"><?= rp(-$perUnit((float) $dasar['refund'])) ?></td>
-          <td class="num neg"><?= num((float) $dasar['refund_pct'], 2) ?>%</td>
-          <td class="muted" style="font-size:11.5px">barang kembali</td>
+          <td class="num neg"><?= rp(-$c['refund']) ?></td>
+          <td class="num neg"><?= num($c['refund'] / $c['harga'] * 100, 2) ?>%</td>
+          <td class="muted" style="font-size:11.5px">% dari harga jual</td>
+          <td></td>
         </tr>
         <?php endif; ?>
 
         <?php
         /** Baris ringkas + baris rincian yang bisa dibuka-tutup. */
-        $blok = static function (string $id, string $judul, float $total, float $pct, array $items)
-                use ($perUnit, $hargaTot): void {
+        $blok = static function (string $id, string $judul, float $total, float $harga, array $items): void {
             if ($total <= 0 && $items === []) {
                 return;
             } ?>
           <tr>
             <td><?= e($judul) ?></td>
-            <td class="num neg"><?= rp(-$perUnit($total)) ?></td>
-            <td class="num neg"><?= num($pct, 2) ?>%</td>
+            <td class="num neg"><?= rp(-$total) ?></td>
+            <td class="num neg"><?= num($total / $harga * 100, 2) ?>%</td>
+            <td class="muted" style="font-size:11.5px">% dari harga jual</td>
             <td>
               <?php if ($items !== []): ?>
                 <button class="btn ghost sm no-print" type="button"
@@ -289,57 +262,102 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
           <?php foreach ($items as $it): ?>
             <tr class="rinci <?= e($id) ?>" hidden>
               <td style="padding-left:26px" class="muted">&mdash; <?= e($it['label']) ?></td>
-              <td class="num <?= $it['nilai'] < 0 ? 'neg' : 'pos' ?>"><?= rp($perUnit($it['nilai'])) ?></td>
-              <td class="num muted"><?= num(abs($it['nilai']) / $hargaTot * 100, 2) ?>%</td>
+              <td class="num <?= $it['nilai'] < 0 ? 'neg' : 'pos' ?>"><?= rp($it['nilai']) ?></td>
+              <td class="num muted"><?= num(abs($it['nilai']) / $harga * 100, 2) ?>%</td>
               <td class="muted" style="font-size:11.5px"><?= e(Profiles::LABELS[$it['kategori']] ?? $it['kategori']) ?></td>
+              <td></td>
             </tr>
           <?php endforeach;
         };
 
-        $blok('rPotongan', 'Potongan & diskon ditanggung penjual',
-              (float) $dasar['potongan'], (float) $dasar['potongan_pct'], $rinci['potongan']);
-        $blok('rBiaya', 'Biaya platform',
-              (float) $dasar['biaya'], (float) $dasar['biaya_pct'], $rinci['biaya']);
+        $rinciPot = array_map(static fn(array $x): array =>
+            ['label' => $x['label'], 'kategori' => $x['kategori'], 'nilai' => $x['nilai'] / $qty], $rinci['potongan']);
+        $rinciBi = array_map(static fn(array $x): array =>
+            ['label' => $x['label'], 'kategori' => $x['kategori'], 'nilai' => $x['nilai'] / $qty], $rinci['biaya']);
+
+        $blok('rPotongan', 'Potongan & diskon ditanggung penjual', $c['potongan'], $c['harga'], $rinciPot);
         ?>
 
-        <?php if (abs((float) $dasar['lain']) >= 1): ?>
+        <tr style="background:rgba(0,0,0,.02)">
+          <td><b>Harga setelah dikurang diskon</b></td>
+          <td class="num"><b><?= rp($c['setelah_diskon']) ?></b></td>
+          <td class="num"><b><?= num($c['setelah_diskon'] / $c['harga'] * 100, 2) ?>%</b></td>
+          <td class="muted" style="font-size:11.5px">harga jual &minus; diskon</td>
+          <td></td>
+        </tr>
+
+        <?php $blok('rBiaya', 'Biaya platform', $c['biaya'], $c['harga'], $rinciBi); ?>
+
+        <?php if (abs($c['lain']) >= 1): ?>
         <tr>
           <td>Penyesuaian &amp; selisih platform</td>
-          <td class="num <?= $dasar['lain'] > 0 ? 'neg' : 'pos' ?>"><?= rp(-$perUnit((float) $dasar['lain'])) ?></td>
-          <td class="num muted"><?= num(abs((float) $dasar['lain_pct']), 2) ?>%</td>
-          <td class="muted" style="font-size:11.5px">kompensasi &amp; koreksi</td>
+          <td class="num <?= $c['lain'] > 0 ? 'neg' : 'pos' ?>"><?= rp(-$c['lain']) ?></td>
+          <td class="num muted"><?= num(abs($c['lain']) / $c['harga'] * 100, 2) ?>%</td>
+          <td class="muted" style="font-size:11.5px">% dari harga jual</td>
+          <td></td>
+        </tr>
+        <?php endif; ?>
+
+        <tr style="background:rgba(0,0,0,.02)">
+          <td><b>Dana diterima bersih</b></td>
+          <td class="num"><b><?= rp($c['dana_diterima']) ?></b></td>
+          <td class="num"><b><?= num($c['dana_diterima'] / $c['harga'] * 100, 2) ?>%</b></td>
+          <td class="muted" style="font-size:11.5px">harga setelah diskon &minus; biaya platform</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>PPN <?= num($c['ppn_persen'], 0) ?>%</td>
+          <td class="num neg"><?= rp(-$c['ppn']) ?></td>
+          <td class="num neg"><?= num($c['ppn'] / $c['harga'] * 100, 2) ?>%</td>
+          <td class="muted" style="font-size:11.5px">
+            <?= num($c['ppn_persen'], 0) ?>% dari harga setelah dikurang diskon
+          </td>
+          <td></td>
+        </tr>
+        <?php if ($c['pph_persen'] > 0): ?>
+        <tr>
+          <td>Pajak e-commerce <?= num($c['pph_persen'], 1) ?>%</td>
+          <td class="num neg"><?= rp(-$c['pph']) ?></td>
+          <td class="num neg"><?= num($c['pph'] / $c['harga'] * 100, 2) ?>%</td>
+          <td class="muted" style="font-size:11.5px">
+            <?= num($c['pph_persen'], 1) ?>% dari harga setelah dikurang diskon
+          </td>
+          <td></td>
         </tr>
         <?php endif; ?>
 
         <tr style="background:rgba(0,0,0,.02)">
           <td><b>Penjualan bersih</b></td>
-          <td class="num"><b><?= rp($jualBersihUnit) ?></b></td>
-          <td class="num"><b><?= num($jualBersihUnit / $hargaUnit * 100, 2) ?>%</b></td>
-          <td class="muted" style="font-size:11.5px">dasar hitung marjin</td>
-        </tr>
-        <tr>
-          <td class="muted">Dana dari platform (sebelum pajak)</td>
-          <td class="num muted"><?= rp($bersihUnit) ?></td>
-          <td class="num muted"><?= num((float) $dasar['bersih_pct'], 2) ?>%</td>
-          <td class="muted" style="font-size:11.5px">yang masuk rekening</td>
-        </tr>
-        <tr style="background:rgba(0,0,0,.02)">
-          <td><b>Dana bersih setelah pajak</b></td>
-          <td class="num"><b><?= rp($setelahUnit) ?></b></td>
-          <td class="num"><b><?= num($setelahUnit / $hargaUnit * 100, 2) ?>%</b></td>
+          <td class="num"><b><?= rp($c['penjualan_bersih']) ?></b></td>
+          <td class="num"><b><?= num($c['penjualan_bersih'] / $c['harga'] * 100, 2) ?>%</b></td>
+          <td class="muted" style="font-size:11.5px">dana diterima &minus; PPN &minus; pajak e-commerce</td>
           <td></td>
         </tr>
+
         <tr>
           <td>HPP per unit</td>
-          <td class="num neg"><?= $hppUnit > 0 ? rp(-$hppUnit) : '<span class="badge warn">belum ada</span>' ?></td>
-          <td class="num neg"><?= $hppUnit > 0 ? num($hppUnit / $hargaUnit * 100, 2) . '%' : '-' ?></td>
-          <td class="muted" style="font-size:11.5px"><?= $hppDb !== null ? e($hppDb['period_ym']) : '' ?></td>
+          <td class="num neg">
+            <?= $c['hpp'] > 0 ? rp(-$c['hpp']) : '<span class="badge warn">belum ada</span>' ?>
+          </td>
+          <td class="num neg">
+            <?= $c['hpp'] > 0 && $c['penjualan_bersih'] > 0
+                ? num($c['hpp'] / $c['penjualan_bersih'] * 100, 2) . '%' : '-' ?>
+          </td>
+          <td class="muted" style="font-size:11.5px">
+            % dari penjualan bersih<?= $hppDb !== null ? ' &middot; ' . e($hppDb['period_ym']) : '' ?>
+          </td>
+          <td></td>
         </tr>
+
         <tr style="background:rgba(0,0,0,.02)">
           <td><b>Laba bersih sekarang</b></td>
-          <td class="num <?= $labaUnit < 0 ? 'neg' : 'pos' ?>"><b><?= rp($labaUnit) ?></b></td>
-          <td class="num"><b>marjin <?= $marjinKini === null ? '-' : num($marjinKini, 1) . '%' ?></b></td>
-          <td class="muted" style="font-size:11.5px">dari penjualan bersih</td>
+          <td class="num <?= $c['laba'] < 0 ? 'neg' : 'pos' ?>"><b><?= rp($c['laba']) ?></b></td>
+          <td class="num <?= ($c['marjin'] ?? 0) < 0 ? 'neg' : 'pos' ?>">
+            <b><?= $c['marjin'] === null || $c['hpp'] <= 0 ? '-' : num($c['marjin'], 2) . '%' ?></b>
+          </td>
+          <td class="muted" style="font-size:11.5px">% dari penjualan bersih</td>
+          <td></td>
         </tr>
       </tbody>
     </table>
@@ -405,23 +423,20 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>Komponen</th><th class="num">Per unit</th><th class="num">% dari harga jual</th>
+        <th>Komponen</th><th class="num">Per unit (Rp)</th><th class="num">Persentase</th>
+        <th>Catatan / acuan</th>
       </tr></thead>
       <tbody>
-        <tr><td><b>Harga jual</b></td><td class="num" id="oHarga"><b>-</b></td><td class="num muted">100,00%</td></tr>
-        <tr><td>PPN keluaran</td><td class="num neg" id="oPpn">-</td><td class="num neg" id="pPpn">-</td></tr>
-        <tr><td class="muted">= Peredaran bruto (DPP)</td><td class="num muted" id="oDpp">-</td>
-            <td class="num muted" id="pDpp">-</td></tr>
-        <tr><td>PPh Pasal 22 e-commerce</td><td class="num neg" id="oPph">-</td>
-            <td class="num neg" id="pPph">-</td></tr>
-        <?php if ($dasar['refund'] > 0): ?>
+        <tr><td><b>Harga jual terdaftar</b></td><td class="num" id="oHarga"><b>-</b></td>
+            <td class="num muted">100,00%</td><td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
+        <?php if ($c['refund'] > 0): ?>
           <tr><td>Pengembalian dana</td><td class="num neg" id="oRefund">-</td>
-              <td class="num neg" id="pRefund">-</td></tr>
+              <td class="num neg" id="pRefund">-</td>
+              <td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
         <?php endif; ?>
-        <tr>
-          <td>Potongan &amp; diskon</td><td class="num neg" id="oPotongan">-</td>
-          <td class="num neg" id="pPotongan">-</td>
-        </tr>
+        <tr><td>Potongan &amp; diskon ditanggung penjual</td><td class="num neg" id="oPotongan">-</td>
+            <td class="num neg" id="pPotongan">-</td>
+            <td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
         <?php foreach ($rinci['potongan'] as $it): ?>
           <tr class="rinci rPotongan" hidden>
             <td style="padding-left:26px" class="muted">&mdash; <?= e($it['label']) ?></td>
@@ -429,12 +444,16 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
                 data-grup="potongan"
                 data-share="<?= e((string) ($it['nilai'] / -(float) $dasar['potongan'])) ?>">-</td>
             <td class="num muted"><?= num(abs($it['nilai']) / $hargaTot * 100, 2) ?>%</td>
+            <td class="muted" style="font-size:11.5px"><?= e(Profiles::LABELS[$it['kategori']] ?? $it['kategori']) ?></td>
           </tr>
         <?php endforeach; ?>
-        <tr>
-          <td>Biaya platform</td><td class="num neg" id="oBiaya">-</td>
-          <td class="num neg" id="pBiaya">-</td>
-        </tr>
+        <tr style="background:rgba(0,0,0,.02)">
+            <td><b>Harga setelah dikurang diskon</b></td><td class="num" id="oSetelah"><b>-</b></td>
+            <td class="num" id="pSetelah"><b>-</b></td>
+            <td class="muted" style="font-size:11.5px">harga jual &minus; diskon</td></tr>
+        <tr><td>Biaya platform</td><td class="num neg" id="oBiaya">-</td>
+            <td class="num neg" id="pBiaya">-</td>
+            <td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
         <?php foreach ($rinci['biaya'] as $it): ?>
           <tr class="rinci rBiaya" hidden>
             <td style="padding-left:26px" class="muted">&mdash; <?= e($it['label']) ?></td>
@@ -442,26 +461,34 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
                 data-grup="biaya"
                 data-share="<?= e((string) ($it['nilai'] / -(float) $dasar['biaya'])) ?>">-</td>
             <td class="num muted"><?= num(abs($it['nilai']) / $hargaTot * 100, 2) ?>%</td>
+            <td class="muted" style="font-size:11.5px"><?= e(Profiles::LABELS[$it['kategori']] ?? $it['kategori']) ?></td>
           </tr>
         <?php endforeach; ?>
-        <?php if (abs((float) $dasar['lain']) >= 1): ?>
+        <?php if (abs($c['lain']) >= 1): ?>
           <tr><td>Penyesuaian &amp; selisih</td><td class="num" id="oLain">-</td>
-              <td class="num muted"><?= num(abs((float) $dasar['lain_pct']), 2) ?>%</td></tr>
+              <td class="num muted"><?= num(abs($c['lain']) / $c['harga'] * 100, 2) ?>%</td>
+              <td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
         <?php endif; ?>
         <tr style="background:rgba(0,0,0,.02)">
-            <td><b>Penjualan bersih</b> <span class="muted" style="font-size:11.5px">dasar marjin</span></td>
-            <td class="num" id="oJual"><b>-</b></td><td class="num" id="pJual"><b>-</b></td></tr>
-        <tr><td class="muted">Dana dari platform (sebelum pajak)</td>
-            <td class="num muted" id="oPlatform">-</td><td class="num muted" id="pPlatform">-</td></tr>
+            <td><b>Dana diterima bersih</b></td><td class="num" id="oDana"><b>-</b></td>
+            <td class="num" id="pDana"><b>-</b></td>
+            <td class="muted" style="font-size:11.5px">harga setelah diskon &minus; biaya platform</td></tr>
+        <tr><td>PPN</td><td class="num neg" id="oPpn">-</td><td class="num neg" id="pPpn">-</td>
+            <td class="muted" style="font-size:11.5px" id="kPpn">&mdash;</td></tr>
+        <tr><td>Pajak e-commerce</td><td class="num neg" id="oPph">-</td><td class="num neg" id="pPph">-</td>
+            <td class="muted" style="font-size:11.5px" id="kPph">&mdash;</td></tr>
         <tr style="background:rgba(0,0,0,.02)">
-            <td><b>Dana bersih setelah pajak</b></td><td class="num" id="oBersih"><b>-</b></td>
-            <td class="num" id="pBersih"><b>-</b></td></tr>
+            <td><b>Penjualan bersih</b></td><td class="num" id="oJual"><b>-</b></td>
+            <td class="num" id="pJual"><b>-</b></td>
+            <td class="muted" style="font-size:11.5px">dana diterima &minus; PPN &minus; pajak e-commerce</td></tr>
         <tr><td>HPP per unit <span class="muted" id="oHppKet" style="font-size:11.5px"></span></td>
             <td class="num neg" id="oHpp">-</td>
-            <td class="num neg" id="oHppPct">-</td></tr>
+            <td class="num neg" id="oHppPct">-</td>
+            <td class="muted" style="font-size:11.5px">% dari penjualan bersih</td></tr>
         <tr style="background:rgba(0,0,0,.02)">
             <td><b>Laba bersih per unit</b></td><td class="num" id="oLaba"><b>-</b></td>
-            <td class="num" id="oMarjin"><b>-</b></td></tr>
+            <td class="num" id="oMarjin"><b>-</b></td>
+            <td class="muted" style="font-size:11.5px">% dari penjualan bersih</td></tr>
       </tbody>
     </table>
   </div>
@@ -495,14 +522,14 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
 (function () {
   // Nilai awal dari histori terakhir. Dipakai juga oleh tombol Reset.
   var awal = {
-    harga:   <?= json_encode(round($hargaUnit)) ?>,
-    hpp:     <?= json_encode(round($hppUnit)) ?>,
-    refPct:  <?= json_encode(round((float) $dasar['refund_pct'], 6)) ?>,
-    potPct:  <?= json_encode(round((float) $dasar['potongan_pct'], 6)) ?>,
-    biPct:   <?= json_encode(round((float) $dasar['biaya_pct'], 6)) ?>,
-    lainPct: <?= json_encode(round((float) $dasar['lain_pct'], 6)) ?>,
-    ppn:     <?= json_encode($ppnPersen) ?>,
-    pph:     <?= json_encode($pphPersen) ?>,
+    harga:   <?= json_encode(round($c['harga'])) ?>,
+    hpp:     <?= json_encode(round($c['hpp'])) ?>,
+    refPct:  <?= json_encode(round($c['refund']   / $c['harga'] * 100, 6)) ?>,
+    potPct:  <?= json_encode(round($c['potongan'] / $c['harga'] * 100, 6)) ?>,
+    biPct:   <?= json_encode(round($c['biaya']    / $c['harga'] * 100, 6)) ?>,
+    lainPct: <?= json_encode(round($c['lain']     / $c['harga'] * 100, 6)) ?>,
+    ppn:     <?= json_encode($c['ppn_persen']) ?>,
+    pph:     <?= json_encode($c['pph_persen']) ?>,
     kreditPpn: false
   };
   var marjinWajarMin = <?= json_encode(Reports::MARJIN_MIN) ?>;
@@ -516,7 +543,7 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
   function rp(n) {
     return (n < 0 ? '-' : '') + 'Rp ' + Math.round(Math.abs(n)).toLocaleString('id-ID');
   }
-  function pc(n, d) { return n.toFixed(d === undefined ? 1 : d).replace('.', ',') + '%'; }
+  function pc(n, d) { return n.toFixed(d === undefined ? 2 : d).replace('.', ',') + '%'; }
   function set(id, txt, tebal) {
     var e = el(id);
     if (e) { e.innerHTML = tebal ? '<b>' + txt + '</b>' : txt; }
@@ -527,136 +554,97 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
   }
 
   /**
-   * Porsi PPN terhadap harga jual. Harga sudah termasuk PPN, jadi dihitung
-   * mundur: 11% -> 11/111 = 9,9099% dari harga jual.
+   * Rantai nilai, urutannya sama persis dengan Reports::rantaiLaba() di sisi
+   * PHP: diskon dulu, lalu biaya platform, baru pajak. Pajak dihitung dari
+   * HARGA SETELAH DIKURANG DISKON.
    */
-  function ppnPorsi() {
-    var t = ambil(elPpn, awal.ppn);
-    return t / (100 + t) * 100;
-  }
+  function hitung(harga) {
+    var potPct = ambil(elPot, awal.potPct);
+    var biPct  = ambil(elBi, awal.biPct);
+    var ppn    = ambil(elPpn, awal.ppn);
+    var pph    = ambil(elPph, awal.pph);
 
-  /** Porsi PPh terhadap harga jual: tarif dikalikan DPP, bukan harga jual. */
-  function pphPorsi() {
-    return ambil(elPph, awal.pph) * (100 - ppnPorsi()) / 100;
-  }
+    var refund   = harga * awal.refPct / 100;
+    var potongan = harga * potPct / 100;
+    var setelah  = harga - refund - potongan;
+    var biaya    = harga * biPct / 100;
+    var lain     = harga * awal.lainPct / 100;
+    var dana     = setelah - biaya - lain;
+    var nPpn     = setelah * ppn / 100;
+    var nPph     = setelah * pph / 100;
+    var jual     = dana - nPpn - nPph;
 
-  /**
-   * HPP efektif. Bila PPN masukan bisa dikreditkan, modal sebenarnya adalah
-   * HPP tanpa PPN - bagian PPN-nya kembali lewat pengkreditan.
-   */
-  function hppEfektif() {
+    // HPP efektif: bila PPN masukan bisa dikreditkan, modal sebenarnya
+    // adalah HPP tanpa PPN karena bagian itu kembali lewat pengkreditan.
     var hpp = ambil(elHpp, awal.hpp);
-    if (!elKredit.checked) { return hpp; }
-    var t = ambil(elPpn, awal.ppn);
-    return hpp / (1 + t / 100);
-  }
+    if (elKredit.checked && ppn > 0) { hpp = hpp / (1 + ppn / 100); }
 
-  /** Porsi dana bersih = sisa harga jual setelah seluruh pengurang termasuk pajak. */
-  function netPct() {
-    return 100 - ambil(elPot, awal.potPct) - ambil(elBi, awal.biPct)
-               - awal.refPct - awal.lainPct - ppnPorsi() - pphPorsi();
-  }
-
-  /** Porsi dana platform saja (belum dipotong pajak). */
-  function platformPct() {
-    return 100 - ambil(elPot, awal.potPct) - ambil(elBi, awal.biPct)
-               - awal.refPct - awal.lainPct;
-  }
-
-  /**
-   * Porsi PENJUALAN BERSIH: harga jual dikurangi pajak, pengembalian, dan
-   * potongan. Biaya platform tidak ikut - itu biaya menjual, bukan pengurang
-   * penjualan. Inilah penyebut seluruh persentase marjin.
-   */
-  function jualPct() {
-    return 100 - ppnPorsi() - pphPorsi() - awal.refPct - ambil(elPot, awal.potPct);
+    return {
+      harga: harga, refund: refund, potongan: potongan, setelah: setelah,
+      biaya: biaya, lain: lain, dana: dana, ppn: nPpn, pph: nPph,
+      jual: jual, hpp: hpp, laba: jual - hpp,
+      marjin: jual > 0 ? (jual - hpp) / jual * 100 : null,
+      ppnPersen: ppn, pphPersen: pph, potPct: potPct, biPct: biPct
+    };
   }
 
   function render(harga) {
-    var potPct = ambil(elPot, awal.potPct);
-    var biPct  = ambil(elBi, awal.biPct);
-    var hpp    = hppEfektif();
-    var net    = netPct();
-    var bersih = harga * net / 100;
-    var jual   = harga * jualPct() / 100;
-    var laba   = bersih - hpp;
-    var marjin = jual > 0 ? laba / jual * 100 : null;
+    var v = hitung(harga);
+    var p = function (x) { return v.harga > 0 ? pc(x / v.harga * 100) : '-'; };
 
-    var pPpn = ppnPorsi(), pPph = pphPorsi(), pPlat = platformPct();
-    set('oJual', rp(jual), true);
-    set('pJual', pc(jualPct(), 2), true);
-    set('oPpn', rp(-harga * pPpn / 100));
-    set('pPpn', pc(pPpn, 2));
-    set('oDpp', rp(harga * (100 - pPpn) / 100));
-    set('pDpp', pc(100 - pPpn, 2));
-    set('oPph', rp(-harga * pPph / 100));
-    set('pPph', pc(pPph, 2));
-    set('oPlatform', rp(harga * pPlat / 100));
-    set('pPlatform', pc(pPlat, 2));
+    set('oHarga', rp(v.harga), true);
+    set('oRefund', rp(-v.refund));      set('pRefund', p(v.refund));
+    set('oPotongan', rp(-v.potongan));  set('pPotongan', p(v.potongan));
+    set('oSetelah', rp(v.setelah), true); set('pSetelah', p(v.setelah), true);
+    set('oBiaya', rp(-v.biaya));        set('pBiaya', p(v.biaya));
+    set('oLain', rp(-v.lain));
+    set('oDana', rp(v.dana), true);     set('pDana', p(v.dana), true);
+    set('oPpn', rp(-v.ppn));            set('pPpn', p(v.ppn));
+    set('oPph', rp(-v.pph));            set('pPph', p(v.pph));
+    set('kPpn', pc(v.ppnPersen, 0) + ' dari harga setelah dikurang diskon');
+    set('kPph', pc(v.pphPersen, 1) + ' dari harga setelah dikurang diskon');
+    set('oJual', rp(v.jual), true);     set('pJual', p(v.jual), true);
+    set('oHpp', rp(-v.hpp));
+    set('oHppPct', v.jual > 0 && v.hpp > 0 ? pc(v.hpp / v.jual * 100) : '-');
+    set('oLaba', rp(v.laba), true);
+    set('oMarjin', v.marjin === null || v.hpp <= 0 ? '-' : pc(v.marjin), true);
+
+    el('oLaba').className = 'num ' + (v.laba < 0 ? 'neg' : 'pos');
+    el('oMarjin').className = 'num ' + (v.marjin === null ? '' : (v.marjin < 0 ? 'neg' : 'pos'));
     el('oHppKet').textContent = elKredit.checked ? '(tanpa PPN masukan)' : '';
-
-    set('oHarga', rp(harga), true);
-    set('oRefund', rp(-harga * awal.refPct / 100));
-    set('pRefund', pc(awal.refPct, 2));
-    set('oPotongan', rp(-harga * potPct / 100));
-    set('pPotongan', pc(potPct, 2));
-    set('oBiaya', rp(-harga * biPct / 100));
-    set('pBiaya', pc(biPct, 2));
-    set('oLain', rp(-harga * awal.lainPct / 100));
-    set('oBersih', rp(bersih), true);
-    set('pBersih', pc(net, 2), true);
-    set('oHpp', rp(-hpp));
-    set('oHppPct', harga > 0 ? pc(-hpp / harga * 100, 2) : '-');
-    set('oLaba', rp(laba), true);
-    set('oMarjin', marjin === null ? '-' : pc(marjin), true);
-
-    el('oLaba').className = 'num ' + (laba < 0 ? 'neg' : 'pos');
-    el('oMarjin').className = 'num ' + (marjin === null ? '' : (marjin < 0 ? 'neg' : 'pos'));
 
     // Baris rincian mengikuti total kelompoknya, jadi jumlahnya selalu sama
     // dengan baris ringkasan walau persentasenya diubah manual.
     document.querySelectorAll('[data-share]').forEach(function (td) {
-      var totalGrup = -harga * (td.getAttribute('data-grup') === 'potongan' ? potPct : biPct) / 100;
-      td.textContent = rp(totalGrup * parseFloat(td.getAttribute('data-share')));
+      var total = -(td.getAttribute('data-grup') === 'potongan' ? v.potongan : v.biaya);
+      td.textContent = rp(total * parseFloat(td.getAttribute('data-share')));
     });
 
     var pesan;
-    if (net <= 0) {
-      pesan = '<b class="neg">Potongan dan biaya melebihi 100%.</b> Periksa lagi persentasenya.';
-    } else if (hpp <= 0) {
+    if (v.jual <= 0) {
+      pesan = '<b class="neg">Penjualan bersih nol atau negatif.</b> Periksa lagi persentasenya.';
+    } else if (v.hpp <= 0) {
       pesan = '<b class="neg">HPP belum diisi.</b> Isi HPP per unit di atas supaya marjinnya berarti.';
-    } else if (marjin === null) {
-      pesan = 'Harga jual belum diisi.';
-    } else if (marjin < 0) {
-      pesan = '<b class="neg">Jual rugi.</b> Dengan harga ini HPP masih lebih besar dari dana yang diterima.';
-    } else if (marjin < marjinWajarMin) {
-      pesan = 'Marjin <b>' + pc(marjin) + '</b> masih di bawah rentang wajar ('
+    } else if (v.marjin < 0) {
+      pesan = '<b class="neg">Jual rugi.</b> HPP masih lebih besar dari penjualan bersih.';
+    } else if (v.marjin < marjinWajarMin) {
+      pesan = 'Marjin <b>' + pc(v.marjin, 1) + '</b> masih di bawah rentang wajar ('
             + marjinWajarMin + '&ndash;' + marjinWajarMax + '%).';
-    } else if (marjin > marjinWajarMax) {
-      pesan = 'Marjin <b>' + pc(marjin) + '</b> di atas rentang wajar ('
+    } else if (v.marjin > marjinWajarMax) {
+      pesan = 'Marjin <b>' + pc(v.marjin, 1) + '</b> di atas rentang wajar ('
             + marjinWajarMin + '&ndash;' + marjinWajarMax + '%) &mdash; enak, tapi pastikan HPP-nya sudah lengkap.';
     } else {
-      pesan = 'Marjin <b>' + pc(marjin) + '</b> berada di rentang wajar ('
+      pesan = 'Marjin <b>' + pc(v.marjin, 1) + '</b> berada di rentang wajar ('
             + marjinWajarMin + '&ndash;' + marjinWajarMax + '%).';
-    }
-    // Marjin sebelum pajak: penyebutnya penjualan bersih tanpa lapisan pajak,
-    // supaya sebanding dengan angka di uji kewajaran HPP.
-    var bersihPlat = harga * pPlat / 100;
-    var jualPra    = harga * (100 - awal.refPct - potPct) / 100;
-    if (jualPra > 0 && hpp > 0) {
-      var mSebelum = (bersihPlat - hpp) / jualPra * 100;
-      pesan += ' <span class="muted">Sebelum pajak marjinnya ' + pc(mSebelum)
-             + ' &mdash; itu angka yang dipakai uji kewajaran HPP.</span>';
     }
     el('simCatatan').innerHTML = pesan;
 
-    // Beri tahu kalau angkanya sudah tidak lagi mengikuti histori.
     var ubah = [];
-    if (Math.abs(potPct - awal.potPct) > 0.005) { ubah.push('potongan'); }
-    if (Math.abs(biPct - awal.biPct) > 0.005)   { ubah.push('biaya platform'); }
+    if (Math.abs(v.potPct - awal.potPct) > 0.005) { ubah.push('potongan'); }
+    if (Math.abs(v.biPct - awal.biPct) > 0.005)   { ubah.push('biaya platform'); }
     if (Math.abs(ambil(elHpp, awal.hpp) - awal.hpp) > 0.5) { ubah.push('HPP'); }
-    if (Math.abs(ambil(elPpn, awal.ppn) - awal.ppn) > 0.005) { ubah.push('PPN'); }
-    if (Math.abs(ambil(elPph, awal.pph) - awal.pph) > 0.005) { ubah.push('PPh'); }
+    if (Math.abs(v.ppnPersen - awal.ppn) > 0.005) { ubah.push('PPN'); }
+    if (Math.abs(v.pphPersen - awal.pph) > 0.005) { ubah.push('pajak e-commerce'); }
     if (elKredit.checked !== awal.kreditPpn) { ubah.push('kredit PPN masukan'); }
     el('simUbah').innerHTML = ubah.length
       ? '<b>Diubah manual:</b> ' + ubah.join(', ') + ' &mdash; tidak lagi mengikuti histori terakhir.'
@@ -666,25 +654,24 @@ $marjinKini = $jualBersihUnit > 0 && $hppUnit > 0 ? $labaUnit / $jualBersihUnit 
   function dariHarga() {
     var harga = ambil(elHarga, awal.harga);
     if (harga <= 0) { return; }
-    var bersih = harga * netPct() / 100;
-    var jual   = harga * jualPct() / 100;
-    var hpp    = hppEfektif();
-    elMarjin.value = (jual > 0 ? (bersih - hpp) / jual * 100 : 0).toFixed(1);
+    var v = hitung(harga);
+    elMarjin.value = (v.jual > 0 ? v.marjin : 0).toFixed(1);
     render(harga);
   }
 
   function dariMarjin() {
     var m = parseFloat(elMarjin.value);
-    var net = netPct(), jual = jualPct();
-    var hpp = hppEfektif();
-    if (!isFinite(m) || jual <= 0 || hpp <= 0) { return; }
-    // laba = harga*net/100 - hpp, dan marjin = laba / (harga*jual/100).
-    // Diselesaikan untuk harga:  harga = hpp / (net/100 - m/100 * jual/100)
-    var penyebut = net / 100 - (m / 100) * (jual / 100);
+    if (!isFinite(m) || m >= 100) { return; }
+    // Seluruh komponen sebanding dengan harga, jadi penjualan bersih dan HPP
+    // cukup dihitung sekali pada harga acuan lalu diskalakan.
+    var acuan = hitung(awal.harga > 0 ? awal.harga : 100000);
+    if (acuan.harga <= 0 || acuan.jual <= 0 || acuan.hpp <= 0) { return; }
+    var jualRasio = acuan.jual / acuan.harga;          // penjualan bersih per rupiah harga
+    var penyebut  = jualRasio * (1 - m / 100);
     if (penyebut <= 0) { return; }
-    var harga = hpp / penyebut;
+    var harga = acuan.hpp / penyebut;
     if (!isFinite(harga) || harga <= 0) { return; }
-    elHarga.value = Math.ceil(harga / 100) * 100;   // dibulatkan ke atas per Rp 100
+    elHarga.value = Math.ceil(harga / 100) * 100;      // dibulatkan ke atas per Rp 100
     render(parseFloat(elHarga.value));
   }
 

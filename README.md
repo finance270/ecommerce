@@ -154,7 +154,7 @@ akan **0**.
 | **Pesanan** | Cari/filter seluruh pesanan, buka detail per pesanan |
 | **Produk** | Produk & varian terlaris, qty terjual, omzet, retur |
 | **Performa** | Rekap mingguan & bulanan + pertumbuhan, metode bayar, kurir, provinsi |
-| **Laba & Biaya** | Ringkasan lengkap dari pendapatan kotor sampai **laba usaha**, jembatan angka per platform, rekap bulanan, **laba per produk setelah HPP**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
+| **Laba & Biaya** | Ringkasan lengkap dari pendapatan kotor sampai **laba usaha** (biaya platform & beban operasional bisa dibuka rinciannya, bisa dicetak jadi PDF), jembatan angka per platform, rekap bulanan, **laba per produk setelah HPP**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
 | **HPP** | Impor HPP per produk per bulan + **pemantauan produk yang belum ada HPP** |
 | **Beban** | Impor beban operasional per bulan (gaji, sewa, listrik, packaging, iklan, dll) |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
@@ -279,29 +279,39 @@ membingungkan.
 
 Untuk produk yang HPP-nya **sudah** diisi, menu **HPP** menguji kewajarannya:
 
-```
-marjin laba = (dana bersih − HPP) ÷ PENJUALAN BERSIH
-```
-
-**Penjualan bersih** adalah penyebut seluruh persentase marjin di aplikasi ini:
+Rantai nilainya berlaku seragam di **Laba & Biaya**, **simulasi harga**, **uji kewajaran HPP**,
+**rincian produk**, dan **ekspor CSV** — semuanya memakai `Reports::rantaiLaba()` yang sama,
+sehingga satu produk tidak pernah menunjukkan angka berbeda antar halaman:
 
 ```
-penjualan bersih = pendapatan kotor − potongan & diskon
+  harga jual terdaftar                    100%     % dari harga jual
+- pengembalian dana (bila ada)
+- potongan & diskon ditanggung penjual              % dari harga jual
+= harga setelah dikurang diskon                     harga jual − diskon      ← dasar hitung pajak
+- biaya platform                                    % dari harga jual
+= dana diterima bersih                              setelah diskon − biaya platform
+- PPN 11%                                           11% × harga setelah dikurang diskon
+- pajak e-commerce 0,5%                             0,5% × harga setelah dikurang diskon
+= penjualan bersih                                  dana diterima − PPN − pajak   ← dasar hitung marjin
+- HPP                                               % dari penjualan bersih
+= laba kotor                                        % dari penjualan bersih
+- beban operasional                                 (hanya di Laba & Biaya)
+= laba usaha                                        % dari penjualan bersih
 ```
 
-Pendapatan kotor sudah bersih dari pengembalian dana (lihat *Pengembalian dana* di atas), jadi
-yang tersisa dikurangkan hanyalah potongan dan diskon yang ditanggung penjual. **Biaya platform
-sengaja tidak dikurangkan dari penyebut** — komisi, layanan, dan ongkir adalah biaya *menjual*,
-bukan pengurang penjualan. Marjin karena itu berarti *"berapa persen dari penjualan bersih yang
-benar-benar jadi laba"*, ukuran yang sama dengan laporan laba rugi pada umumnya.
+Yang perlu diperhatikan:
 
-Dasar ini dipakai seragam di **uji kewajaran HPP**, **rincian produk**, **laba per produk** pada
-Laba & Biaya, **ekspor CSV**, dan **simulasi harga** — supaya satu produk tidak menunjukkan angka
-marjin berbeda-beda antar halaman.
+- **Pajak dihitung dari harga setelah dikurang diskon**, bukan dari harga jual — diskon mengurangi
+  dasar pengenaannya lebih dulu.
+- **Marjin memakai penyebut penjualan bersih**, dan **labanya juga sudah setelah pajak**. Baris HPP
+  dan laba diukur terhadap penjualan bersih; baris lain terhadap harga jual. Kolom *Catatan / acuan*
+  di tiap tabel menyebutkan dasarnya, jadi tidak perlu menebak.
+- Pada **Laba & Biaya**, *dana diterima bersih* tetap sama persis dengan angka resmi platform —
+  penyesuaian dan selisih pencatatan ikut diperhitungkan, jadi jembatan angkanya tetap berimbang.
 
-> Marjin dengan penyebut ini **lebih kecil** daripada bila dibagi dana yang diterima. Kalau
-> rentang wajar Anda dulu dikalibrasi terhadap penyebut lama, angkanya perlu diturunkan —
-> ketiga ambangnya memang bisa diubah dari halaman.
+> Marjin dengan dasar ini **lebih kecil** daripada sebelumnya, karena pajak ikut dipotong dan
+> penyebutnya lebih besar. Kalau rentang wajar Anda dulu dikalibrasi terhadap dasar lama, angkanya
+> perlu diturunkan — ketiga ambangnya memang bisa diubah dari halaman.
 
 Yang dianggap wajar adalah sebuah **rentang**, bukan sekadar batas atas. Nilai awalnya
 **60%–80%**, angka yang sehat untuk produk kopi bubuk/biji:

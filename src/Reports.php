@@ -45,7 +45,80 @@ final class Reports
      */
     public static function penjualanBersih(array $r): float
     {
-        return (float) ($r['kotor'] ?? 0) - abs((float) ($r['potongan'] ?? 0));
+        return self::rantaiLaba($r)['penjualan_bersih'];
+    }
+
+    /**
+     * Rantai nilai baku dari harga jual sampai laba, dipakai bersama oleh
+     * halaman Laba & Biaya dan simulasi harga supaya keduanya tidak pernah
+     * berbeda urutan maupun dasar hitungnya.
+     *
+     *   harga jual terdaftar
+     * - pengembalian dana (bila ada)
+     * - potongan & diskon ditanggung penjual
+     * = harga setelah dikurang diskon        <- dasar hitung pajak
+     * - biaya platform (+ penyesuaian/selisih)
+     * = dana diterima bersih
+     * - PPN            (persen x harga setelah diskon)
+     * - pajak e-commerce (persen x harga setelah diskon)
+     * = penjualan bersih                      <- dasar hitung seluruh marjin
+     * - HPP
+     * = laba kotor
+     * - beban operasional (bila ada)
+     * = laba usaha
+     *
+     * Persentase tiap baris diukur terhadap harga jual, KECUALI HPP dan laba
+     * yang diukur terhadap penjualan bersih - itulah dasar yang bermakna
+     * untuk keduanya.
+     *
+     * @param array $r butuh: kotor, potongan; opsional: biaya, lain, hpp
+     */
+    public static function rantaiLaba(array $r, ?float $ppnPersen = null, ?float $pphPersen = null): array
+    {
+        $ppn = $ppnPersen ?? Tax::PPN_PERSEN;
+        $pph = $pphPersen ?? Tax::PPH_PERSEN;
+
+        $harga    = (float) ($r['kotor'] ?? 0);
+        $refund   = abs((float) ($r['refund'] ?? 0));
+        $potongan = abs((float) ($r['potongan'] ?? 0));
+        $biaya    = abs((float) ($r['biaya'] ?? 0));
+        $lain     = (float) ($r['lain'] ?? 0);
+        $hpp      = abs((float) ($r['hpp'] ?? 0));
+        $beban    = abs((float) ($r['beban'] ?? 0));
+
+        $setelahDiskon = $harga - $refund - $potongan;
+        // Sebagian laporan sudah punya angka dana diterima langsung dari
+        // settlement; itu lebih tepat dipakai daripada dihitung ulang, karena
+        // sudah memuat penyesuaian dan selisih pencatatan platform.
+        $danaDiterima = array_key_exists('bersih', $r)
+            ? (float) $r['bersih']
+            : $setelahDiskon - $biaya - $lain;
+        $nilaiPpn      = $setelahDiskon * $ppn / 100;
+        $nilaiPph      = $setelahDiskon * $pph / 100;
+        $penjualan     = $danaDiterima - $nilaiPpn - $nilaiPph;
+
+        $labaKotor = $penjualan - $hpp;
+
+        return [
+            'harga'            => $harga,
+            'refund'           => $refund,
+            'potongan'         => $potongan,
+            'setelah_diskon'   => $setelahDiskon,
+            'biaya'            => $biaya,
+            'lain'             => $lain,
+            'dana_diterima'    => $danaDiterima,
+            'ppn'              => $nilaiPpn,
+            'pph'              => $nilaiPph,
+            'penjualan_bersih' => $penjualan,
+            'hpp'              => $hpp,
+            'laba'             => $labaKotor,
+            'beban'            => $beban,
+            'laba_usaha'       => $labaKotor - $beban,
+            'marjin'           => $penjualan > 0 ? $labaKotor / $penjualan * 100 : null,
+            'marjin_usaha'     => $penjualan > 0 ? ($labaKotor - $beban) / $penjualan * 100 : null,
+            'ppn_persen'       => $ppn,
+            'pph_persen'       => $pph,
+        ];
     }
 
     /** Bangun potongan WHERE + parameter untuk filter standar. */
@@ -544,6 +617,8 @@ final class Reports
         };
         $sub = self::settlementPerOrderSql($w);
         $join = self::costJoinSql();
+        // Porsi PPN + pajak e-commerce terhadap pendapatan setelah diskon.
+        $tarifPajak = (Tax::PPN_PERSEN + Tax::PPH_PERSEN) / 100;
 
         return Db::all(
             "SELECT i.platform,
@@ -556,17 +631,26 @@ final class Reports
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     SUM(i.qty * COALESCE(pc.cost_per_unit, 0))          AS hpp,
                     SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END)  AS qty_tanpa_hpp,
+                    -- Laba SETELAH pajak: dana diterima dikurangi PPN + pajak
+                    -- e-commerce, baru dikurangi HPP.
                     SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
+                        - SUM((st.gross_amount + st.total_potongan)
+                              * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak}
                         - SUM(i.qty * COALESCE(pc.cost_per_unit, 0))    AS laba,
-                    -- Penyebutnya PENJUALAN BERSIH (kotor - potongan), bukan
-                    -- dana yang diterima: biaya platform adalah biaya menjual,
-                    -- bukan pengurang penjualan.
-                    CASE WHEN SUM((st.gross_amount + st.total_potongan)
-                                  * i.subtotal_before_disc / o.items_subtotal_before) > 0
+                    -- Penyebutnya PENJUALAN BERSIH, yaitu dana diterima dikurangi
+                    -- PPN dan pajak e-commerce. Keduanya dihitung dari pendapatan
+                    -- setelah dikurang diskon - urutan yang sama dengan
+                    -- Reports::rantaiLaba() dan halaman simulasi harga.
+                    CASE WHEN SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
+                              - SUM((st.gross_amount + st.total_potongan)
+                                    * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak} > 0
                          THEN (SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
+                               - SUM((st.gross_amount + st.total_potongan)
+                                     * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak}
                                - SUM(i.qty * COALESCE(pc.cost_per_unit, 0)))
-                              / SUM((st.gross_amount + st.total_potongan)
-                                    * i.subtotal_before_disc / o.items_subtotal_before) * 100
+                              / (SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
+                                 - SUM((st.gross_amount + st.total_potongan)
+                                       * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak}) * 100
                          ELSE NULL END AS marjin_laba
              FROM ({$sub}) st
              STRAIGHT_JOIN orders o
@@ -742,13 +826,14 @@ final class Reports
             $bersih = (float) $r['bersih'];
             $hpp    = (float) $r['hpp'];
             $qty    = (int) $r['qty'];
-            $laba   = $bersih - $hpp;
-            $jual   = self::penjualanBersih($r);
+            $c      = self::rantaiLaba($r);
+            $laba   = $c['laba'];
+            $jual   = $c['penjualan_bersih'];
 
             $r['laba'] = $laba;
             $r['penjualan_bersih'] = $jual;
             $r['bersih_unit'] = $qty > 0 ? $bersih / $qty : 0.0;
-            $r['marjin'] = $jual > 0 ? $laba / $jual * 100 : null;
+            $r['marjin'] = $c['marjin'];
 
             // Dibandingkan pada ketelitian yang sama dengan yang ditampilkan
             // (1 desimal). Sejak nilai 0 pada template diabaikan, HPP selalu
@@ -907,13 +992,13 @@ final class Reports
         $hpp    = (float) ($r['hpp'] ?? 0);
         $qty    = (int) ($r['qty'] ?? 0);
 
-        $jual = self::penjualanBersih($r);
+        $c = self::rantaiLaba($r);
 
-        $r['laba']             = $bersih - $hpp;
-        $r['penjualan_bersih'] = $jual;
-        $r['marjin']           = $jual > 0 ? ($bersih - $hpp) / $jual * 100 : null;
+        $r['laba']             = $c['laba'];
+        $r['penjualan_bersih'] = $c['penjualan_bersih'];
+        $r['marjin']           = $c['marjin'];
         $r['bersih_unit']      = $qty > 0 ? $bersih / $qty : 0.0;
-        $r['laba_unit']        = $qty > 0 ? ($bersih - $hpp) / $qty : 0.0;
+        $r['laba_unit']        = $qty > 0 ? $c['laba'] / $qty : 0.0;
     }
 
     /** Jumlah pesanan yang memuat produk ini (untuk penomoran halaman). */

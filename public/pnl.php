@@ -45,19 +45,18 @@ $hpp        = $costSum['hpp'];
 $labaKotor  = $bersih - $hpp;
 $labaUsaha  = $labaKotor - $beban;
 
-// Semua baris pengurang dari pendapatan kotor sampai dana diterima bersih.
-$langkah = [
-    ['Pendapatan kotor', $tot['kotor'], 'Nilai penjualan sebelum diskon, sudah dikurangi pengembalian', 'head'],
-    ['Diskon &amp; voucher ditanggung penjual', $tot['potongan'], 'Potongan harga yang Anda tanggung sendiri', ''],
-    ['Biaya platform', $tot['biaya'], 'Komisi, layanan, administrasi, dan biaya lain', ''],
-    ['Penyesuaian', $tot['penyesuaian'], 'Kompensasi & koreksi dari platform', ''],
-    ['Selisih pencatatan', $tot['selisih'], 'Selisih arsip platform, ditampilkan apa adanya', ''],
-    ['Dana diterima bersih', $tot['bersih'], 'Yang benar-benar masuk ke saldo penjual', 'sub'],
-    ['Harga pokok penjualan (HPP)', -$hpp, 'Modal barang yang terjual', ''],
-    ['Laba kotor', $labaKotor, 'Dana diterima bersih dikurangi HPP', 'sub'],
-    ['Beban operasional', -$beban, 'Gaji, sewa, listrik, packaging, dan lainnya', ''],
-    ['Laba usaha', $labaUsaha, 'Laba akhir setelah seluruh biaya', 'foot'],
-];
+// Rantai nilai baku - urutan dan dasar hitungnya sama persis dengan simulasi
+// harga (lihat Reports::rantaiLaba), supaya kedua halaman tidak pernah beda.
+$c = Reports::rantaiLaba([
+    'kotor'    => $tot['kotor'],
+    'potongan' => $tot['potongan'],
+    'biaya'    => $tot['biaya'],
+    // Penyesuaian dan selisih pencatatan menambah dana yang diterima, jadi
+    // tandanya dibalik supaya "dana diterima" bertemu dengan angka platform.
+    'lain'     => -((float) $tot['penyesuaian'] + (float) $tot['selisih']),
+    'hpp'      => $hpp,
+    'beban'    => $beban,
+]);
 
 // Kategori yang benar-benar biaya (nilai negatif = beban).
 $feeCats = array_values(array_filter(
@@ -112,46 +111,170 @@ render_head('Laba & Biaya', 'pnl');
     <div class="hint"><?= pct($bersih, $kotor) ?> dari pendapatan kotor</div>
   </div>
   <div class="kpi">
-    <div class="label">Laba kotor (setelah HPP)</div>
-    <div class="value"><?= rp($labaKotor, true) ?></div>
-    <div class="hint">HPP <?= rp($hpp, true) ?></div>
+    <div class="label">Penjualan bersih</div>
+    <div class="value"><?= rp($c['penjualan_bersih'], true) ?></div>
+    <div class="hint">setelah PPN &amp; pajak e-commerce</div>
   </div>
-  <div class="kpi <?= $labaUsaha < 0 ? 'bad' : 'ok' ?>">
+  <div class="kpi <?= $c['laba_usaha'] < 0 ? 'bad' : 'ok' ?>">
     <div class="label">Laba usaha</div>
-    <div class="value"><?= rp($labaUsaha, true) ?></div>
-    <div class="hint"><?= $kotor > 0 ? number_format($labaUsaha / $kotor * 100, 1, ',', '.') . '% dari kotor' : 'setelah beban operasional' ?></div>
+    <div class="value"><?= rp($c['laba_usaha'], true) ?></div>
+    <div class="hint">
+      <?= $c['marjin_usaha'] === null ? 'setelah beban operasional'
+          : number_format($c['marjin_usaha'], 1, ',', '.') . '% dari penjualan bersih' ?>
+    </div>
   </div>
 </div>
 
 <div class="card">
-  <h2>Ringkasan: dari pendapatan kotor sampai laba usaha</h2>
+  <h2>
+    Ringkasan: dari pendapatan kotor sampai laba usaha
+    <button class="btn ghost sm no-print" type="button" onclick="window.print()"
+            style="float:right">Cetak / simpan PDF</button>
+  </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Seluruh pengurang ditampilkan berurutan sampai angka akhir, jadi tidak ada potongan yang
-    tersembunyi di dalam angka lain.
+    Urutan dan dasar hitungnya sama persis dengan <b>simulasi harga</b> pada menu HPP, jadi kedua
+    halaman tidak akan menunjukkan angka berbeda. Biaya platform dan beban operasional bisa dibuka
+    rinciannya; yang sedang terbuka ikut tercetak.
   </p>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>Komponen</th><th>Keterangan</th>
-        <th class="num">Jumlah</th><th class="num">% dari kotor</th><th style="width:130px"></th>
+        <th>Komponen</th><th class="num">Jumlah (Rp)</th><th class="num">Persentase</th>
+        <th>Catatan / acuan</th><th style="width:120px"></th>
       </tr></thead>
       <tbody>
-      <?php foreach ($langkah as [$nama, $nilai, $ket, $jenis]):
-          if ($jenis === '' && (float) $nilai === 0.0) {
-              continue;   // pengurang yang nihil tidak perlu ditampilkan
-          } ?>
-        <tr<?= in_array($jenis, ['foot', 'sub'], true) ? ' style="font-weight:700;background:#f7f9fc"' : '' ?>>
-          <td><?= $nama ?></td>
-          <td class="muted" style="font-weight:400"><?= $ket ?></td>
-          <td class="num <?= (float) $nilai < 0 ? 'neg' : (in_array($jenis, ['foot', 'sub'], true) ? 'pos' : '') ?>"><?= rp($nilai) ?></td>
-          <td class="num muted" style="font-weight:400"><?= $kotor > 0 ? pct(abs((float) $nilai), $kotor) : '-' ?></td>
-          <td>
-            <?php if ($jenis !== 'head'): ?>
-              <div class="bar"><span style="width:<?= $kotor > 0 ? min(100, round(abs((float) $nilai) / $kotor * 100)) : 0 ?>%;background:<?= in_array($jenis, ['foot', 'sub'], true) ? '#128a5b' : '#c0392b' ?>"></span></div>
-            <?php endif; ?>
-          </td>
+        <?php
+        $H = (float) $c['harga'];
+        $pH = static fn(float $v): string => $H > 0 ? num($v / $H * 100, 2) . '%' : '-';
+        $pJ = static fn(float $v): string => $c['penjualan_bersih'] > 0
+            ? num($v / $c['penjualan_bersih'] * 100, 2) . '%' : '-';
+
+        /** Baris ringkas + rincian yang bisa dibuka-tutup. */
+        $blokPnl = static function (string $id, string $judul, float $total, array $items) use ($pH, $H): void { ?>
+          <tr>
+            <td><?= e($judul) ?></td>
+            <td class="num neg"><?= rp(-$total) ?></td>
+            <td class="num neg"><?= $pH($total) ?></td>
+            <td class="muted" style="font-size:11.5px">% dari pendapatan kotor</td>
+            <td>
+              <?php if ($items !== []): ?>
+                <button class="btn ghost sm no-print" type="button"
+                        data-toggle="<?= e($id) ?>" aria-expanded="false">Lihat rincian</button>
+              <?php endif; ?>
+            </td>
+          </tr>
+          <?php foreach ($items as $it): ?>
+            <tr class="rinci <?= e($id) ?>" hidden>
+              <td style="padding-left:26px" class="muted">&mdash; <?= e($it['label']) ?></td>
+              <td class="num <?= $it['nilai'] < 0 ? 'neg' : 'pos' ?>"><?= rp($it['nilai']) ?></td>
+              <td class="num muted"><?= $pH(abs($it['nilai'])) ?></td>
+              <td class="muted" style="font-size:11.5px"><?= e($it['ket']) ?></td>
+              <td></td>
+            </tr>
+          <?php endforeach;
+        };
+
+        $rinciBiaya = array_map(static fn(array $k): array => [
+            'label' => Profiles::LABELS[$k['fee_category']] ?? $k['fee_category'],
+            'nilai' => (float) $k['total'],
+            'ket'   => 'kategori biaya platform',
+        ], $feeCats);
+        $rinciBeban = array_map(static fn(array $k): array => [
+            'label' => $k['category'],
+            'nilai' => -abs((float) $k['total']),
+            'ket'   => num($k['baris']) . ' pos tercatat',
+        ], $bebanCat);
+        ?>
+
+        <tr>
+          <td><b>Pendapatan kotor</b></td>
+          <td class="num"><b><?= rp($c['harga']) ?></b></td>
+          <td class="num muted">100,00%</td>
+          <td class="muted" style="font-size:11.5px">sudah dikurangi pengembalian</td>
+          <td></td>
         </tr>
-      <?php endforeach; ?>
+
+        <?php $blokPnl('rPotongan', 'Potongan & diskon ditanggung penjual', (float) $c['potongan'], []); ?>
+
+        <tr style="background:rgba(0,0,0,.02)">
+          <td><b>Pendapatan setelah dikurang diskon</b></td>
+          <td class="num"><b><?= rp($c['setelah_diskon']) ?></b></td>
+          <td class="num"><b><?= $pH((float) $c['setelah_diskon']) ?></b></td>
+          <td class="muted" style="font-size:11.5px">pendapatan kotor &minus; diskon</td>
+          <td></td>
+        </tr>
+
+        <?php $blokPnl('rBiaya', 'Biaya platform', (float) $c['biaya'], $rinciBiaya); ?>
+
+        <?php if (abs((float) $c['lain']) >= 1): ?>
+        <tr>
+          <td>Penyesuaian &amp; selisih pencatatan</td>
+          <td class="num <?= $c['lain'] > 0 ? 'neg' : 'pos' ?>"><?= rp(-(float) $c['lain']) ?></td>
+          <td class="num muted"><?= $pH(abs((float) $c['lain'])) ?></td>
+          <td class="muted" style="font-size:11.5px">kompensasi &amp; koreksi platform</td>
+          <td></td>
+        </tr>
+        <?php endif; ?>
+
+        <tr style="background:rgba(0,0,0,.02)">
+          <td><b>Dana diterima bersih</b></td>
+          <td class="num"><b><?= rp($c['dana_diterima']) ?></b></td>
+          <td class="num"><b><?= $pH((float) $c['dana_diterima']) ?></b></td>
+          <td class="muted" style="font-size:11.5px">setelah diskon &minus; biaya platform</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>PPN <?= num((float) $c['ppn_persen'], 0) ?>%</td>
+          <td class="num neg"><?= rp(-(float) $c['ppn']) ?></td>
+          <td class="num neg"><?= $pH((float) $c['ppn']) ?></td>
+          <td class="muted" style="font-size:11.5px">
+            <?= num((float) $c['ppn_persen'], 0) ?>% dari pendapatan setelah dikurang diskon
+          </td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Pajak e-commerce <?= num((float) $c['pph_persen'], 1) ?>%</td>
+          <td class="num neg"><?= rp(-(float) $c['pph']) ?></td>
+          <td class="num neg"><?= $pH((float) $c['pph']) ?></td>
+          <td class="muted" style="font-size:11.5px">
+            <?= num((float) $c['pph_persen'], 1) ?>% dari pendapatan setelah dikurang diskon
+          </td>
+          <td></td>
+        </tr>
+
+        <tr style="background:rgba(0,0,0,.02)">
+          <td><b>Penjualan bersih</b></td>
+          <td class="num"><b><?= rp($c['penjualan_bersih']) ?></b></td>
+          <td class="num"><b><?= $pH((float) $c['penjualan_bersih']) ?></b></td>
+          <td class="muted" style="font-size:11.5px">dana diterima &minus; PPN &minus; pajak e-commerce</td>
+          <td></td>
+        </tr>
+
+        <tr>
+          <td>Harga pokok penjualan (HPP)</td>
+          <td class="num neg"><?= rp(-(float) $c['hpp']) ?></td>
+          <td class="num neg"><?= $pJ((float) $c['hpp']) ?></td>
+          <td class="muted" style="font-size:11.5px">% dari penjualan bersih</td>
+          <td></td>
+        </tr>
+        <tr style="background:rgba(0,0,0,.02)">
+          <td><b>Laba kotor</b></td>
+          <td class="num <?= $c['laba'] < 0 ? 'neg' : 'pos' ?>"><b><?= rp($c['laba']) ?></b></td>
+          <td class="num"><b><?= $pJ((float) $c['laba']) ?></b></td>
+          <td class="muted" style="font-size:11.5px">penjualan bersih &minus; HPP</td>
+          <td></td>
+        </tr>
+
+        <?php $blokPnl('rBeban', 'Beban operasional', (float) $c['beban'], $rinciBeban); ?>
+
+        <tr style="background:rgba(0,0,0,.02);font-weight:700">
+          <td><b>Laba usaha</b></td>
+          <td class="num <?= $c['laba_usaha'] < 0 ? 'neg' : 'pos' ?>"><b><?= rp($c['laba_usaha']) ?></b></td>
+          <td class="num"><b><?= $pJ((float) $c['laba_usaha']) ?></b></td>
+          <td class="muted" style="font-size:11.5px;font-weight:400">% dari penjualan bersih</td>
+          <td></td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -379,4 +502,18 @@ render_head('Laba & Biaya', 'pnl');
   </div>
 </div>
 <?php endif; ?>
+<script>
+// Buka-tutup baris rincian. Baris yang tertutup memakai [hidden] sehingga
+// otomatis tidak ikut tercetak - hasil cetak selalu sama dengan tampilan.
+document.querySelectorAll('[data-toggle]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var kelas = btn.getAttribute('data-toggle');
+    var buka  = btn.getAttribute('aria-expanded') !== 'true';
+    document.querySelectorAll('tr.rinci.' + kelas).forEach(function (tr) { tr.hidden = !buka; });
+    btn.setAttribute('aria-expanded', buka ? 'true' : 'false');
+    btn.textContent = buka ? 'Tutup rincian' : 'Lihat rincian';
+  });
+});
+</script>
+
 <?php render_foot(); ?>
