@@ -178,6 +178,33 @@ function runMigrations(PDO $pdo, string $dbName): array
         }
     }
 
+    // Akun direksi: pintu masuk terpisah dengan kata sandi saja. Dibuat sekali
+    // dengan kata sandi awal '123' dan hak akses hanya tab Laba & Biaya; admin
+    // bisa menggantinya kapan saja dari menu Pengguna.
+    $adaUsers = (int) ($pdo->query(
+        "SELECT COUNT(*) FROM information_schema.tables
+         WHERE table_schema = " . $pdo->quote($dbName) . " AND table_name = 'users'"
+    )->fetchColumn() ?: 0);
+    if ($adaUsers > 0 && columnExists($pdo, $dbName, 'users', 'permissions')) {
+        $st = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = ?');
+        $st->execute([Perm::AKUN_DIREKSI]);
+        if ((int) $st->fetchColumn() === 0) {
+            $ins = $pdo->prepare(
+                'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, 1)'
+            );
+            $ins->execute([
+                Perm::AKUN_DIREKSI,
+                password_hash('123', PASSWORD_DEFAULT),
+                'Direksi',
+                'viewer',
+                json_encode(['pnl']),
+                'all',
+            ]);
+            $done[] = 'akun direksi (kata sandi awal 123, hanya tab Laba & Biaya)';
+        }
+    }
+
     // Index tambahan untuk mempercepat laporan pada instalasi lama.
     foreach ([
         ['settlements', 'idx_settlements_pf_date', 'ALTER TABLE settlements ADD INDEX idx_settlements_pf_date (platform, settlement_date)'],

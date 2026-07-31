@@ -27,6 +27,13 @@ final class Perm
     public const ADMIN_ONLY_TABS = ['users'];
 
     /**
+     * Nama akun khusus direksi: masuk lewat halaman tersendiri dengan kata
+     * sandi saja, tanpa username. Akun ini tidak bisa dihapus dan tidak bisa
+     * dijadikan admin - hak aksesnya hanya sebatas tab yang dicentang.
+     */
+    public const AKUN_DIREKSI = '__direksi__';
+
+    /**
      * Kata kunci penanda kategori gaji.
      *
      * Kategori beban dianggap "gaji" bila namanya memuat salah satu kata ini.

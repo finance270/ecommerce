@@ -29,6 +29,21 @@ if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
 }
 $section = q('section');
 
+// Dengan ?cetak=1 bagian ini dibuka sebagai halaman utuh (bukan potongan yang
+// disisipkan lewat fetch), supaya bisa langsung dicetak jadi PDF.
+$cetak = q('cetak') === '1';
+if ($cetak) {
+    render_head('Uji kewajaran HPP', 'costs');
+    echo '<h1>Uji kewajaran HPP yang sudah diisi</h1>'
+       . '<p class="sub">'
+       . ($ym !== null ? 'Bulan settlement <b>' . e($ym) . '</b>' : 'Seluruh bulan')
+       . (platformFilter() !== null ? ' &middot; ' . platformBadge((string) platformFilter()) : '')
+       . ' &middot; dicetak ' . e(date('d/m/Y H:i'))
+       . '<span class="no-print"> &middot; <a href="costs.php">&larr; Kembali ke HPP</a></span></p>'
+       . '<p class="no-print"><button class="btn" type="button" onclick="window.print()">'
+       . 'Cetak / simpan PDF</button></p>';
+}
+
 if ($section === 'kurang') {
     $missing = Reports::missingCosts($ym, 300);
     ?>
@@ -166,6 +181,9 @@ if ($section === 'cek') {
       </p>
     <?php endif; ?>
     <?php
+    if ($cetak) {
+        render_foot();
+    }
     exit;
 }
 

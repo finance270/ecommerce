@@ -42,6 +42,10 @@ a:hover { text-decoration: underline; }
   gap: 22px;
   flex-wrap: wrap;
   box-shadow: var(--shadow);
+  /* Menu ikut menempel saat halaman digulir. */
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 .topbar .brand {
   font-weight: 700;
@@ -96,7 +100,16 @@ h2 { font-size: 16px; margin: 0 0 12px; }
 .kpi.bad .value { color: var(--bad); }
 
 /* ---------- tabel ---------- */
-.table-wrap { overflow-x: auto; }
+/*
+ * Bawaannya TIDAK menggulir, supaya header kolom bisa menempel ke bagian atas
+ * layar saat halaman digulir. Sebuah kotak yang menggulir akan menjadi acuan
+ * sticky-nya sendiri, sehingga headernya ikut hilang bersama isi tabel.
+ * Kelas .xscroll dipasang oleh app.js hanya pada tabel yang benar-benar lebih
+ * lebar dari kotaknya - di situ gulir mendatar lebih penting daripada header
+ * yang menempel.
+ */
+.table-wrap { overflow: visible; }
+.table-wrap.xscroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
 th {
@@ -107,9 +120,12 @@ th {
   text-transform: uppercase;
   letter-spacing: .3px;
   white-space: nowrap;
+  /* Menempel tepat di bawah menu, tingginya diukur app.js. */
   position: sticky;
-  top: 0;
+  top: var(--topbar-h, 52px);
+  z-index: 5;
 }
+.table-wrap.xscroll th { top: 0; }
 tbody tr:hover { background: #fafbfd; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tfoot td { font-weight: 700; background: #f7f9fc; border-top: 2px solid var(--line); }

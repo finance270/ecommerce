@@ -8,10 +8,6 @@ Auth::requireTab('pnl');
 $range = Reports::dataRange();
 [$from, $to] = dateRange();
 $platform = platformFilter();
-if ($from === null && $to === null && $range['settlement_to'] !== null) {
-    $to = $range['settlement_to'];
-    $from = date('Y-m-01', strtotime($to . ' -2 months'));
-}
 
 $pnl     = Reports::pnl($from, $to, $platform);
 $ring    = $pnl['ringkasan'];

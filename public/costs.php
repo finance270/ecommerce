@@ -238,10 +238,15 @@ render_head('HPP Produk', 'costs');
 <div class="card">
   <h2>
     Uji kewajaran HPP yang sudah diisi
-    <a class="btn ghost sm" href="<?= e('export.php?report=cost_check' . ($ym !== null ? '&ym=' . urlencode($ym) : '') . '&min=' . $minPct . '&max=' . $maxPct . '&bad=' . $badPct) ?>">Ekspor CSV</a>
+    <a class="btn ghost sm no-print" href="<?= e('export.php?report=cost_check' . ($ym !== null ? '&ym=' . urlencode($ym) : '') . '&min=' . $minPct . '&max=' . $maxPct . '&bad=' . $badPct) ?>">Ekspor CSV</a>
+    <a class="btn ghost sm no-print" target="_blank" rel="noopener"
+       href="<?= e('costs_section.php?' . http_build_query(array_filter([
+           'section' => 'cek', 'ym' => $ym, 'min' => $minPct, 'max' => $maxPct,
+           'bad' => $badPct, 'platform' => platformFilter(), 'cetak' => '1',
+       ], static fn($v) => $v !== null && $v !== ''))) ?>">Cetak / simpan PDF</a>
   </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Marjin laba = (dana bersih &minus; HPP) &divide; dana bersih. Marjin yang <b>wajar</b> berada di
+    Marjin laba = laba setelah pajak &divide; penjualan bersih. Marjin yang <b>wajar</b> berada di
     rentang <b><?= number_format($minPct, 0, ',', '.') ?>%&ndash;<?= number_format($maxPct, 0, ',', '.') ?>%</b>
     &mdash; nilai awal untuk produk kopi bubuk/biji. Di <b>bawah</b> rentang berarti marjinnya terlalu
     tipis (harga jual kerendahan atau HPP kemahalan); di <b>atas</b> rentang berarti HPP kemungkinan

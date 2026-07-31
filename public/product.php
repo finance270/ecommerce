@@ -146,44 +146,64 @@ $kelasMarjin = $marjin === null ? '' : ($marjin < 0 ? 'bad' : ($marjin > 70 ? 'w
 // Rantai nilai: tiap baris diukur terhadap pendapatan kotor supaya terlihat
 // berapa persen yang benar-benar tersisa jadi laba.
 $kotor = (float) $total['kotor'];
+// Rantai nilai baku - sama persis dengan Laba & Biaya dan simulasi harga.
+$c = Reports::rantaiLaba($total);
 $rantai = [
-    ['Pendapatan kotor',            (float) $total['kotor'],        false, 'Sebelum potongan, sudah dikurangi pengembalian'],
-    ['Potongan platform',           -abs((float) $total['potongan']), true,  'Diskon/subsidi yang ditanggung penjual'],
-    ['Biaya platform',              -abs((float) $total['biaya']),  true,  'Komisi, layanan, iklan, ongkir, dll'],
-    ['Dana diterima bersih',        (float) $total['bersih'],       false, 'Yang benar-benar masuk ke rekening'],
-    ['HPP',                         -abs((float) $total['hpp']),    true,  'Modal barang yang terjual'],
-    ['Laba bersih',                 (float) $total['laba'],         false, 'Dana bersih dikurangi HPP'],
+    ['Pendapatan kotor',           $c['harga'],            false, '% dari pendapatan kotor'],
+    ['Potongan & diskon',          -$c['potongan'],        true,  '% dari pendapatan kotor'],
+    ['Pendapatan setelah diskon',  $c['setelah_diskon'],   false, 'pendapatan kotor &minus; diskon'],
+    ['Biaya platform',             -$c['biaya'],           true,  '% dari pendapatan kotor'],
+    ['Dana diterima bersih',       $c['dana_diterima'],    false, 'setelah diskon &minus; biaya platform'],
+    ['PPN ' . num($c['ppn_persen'], 0) . '%', -$c['ppn'],  true,
+     num($c['ppn_persen'], 0) . '% dari pendapatan setelah dikurang diskon'],
+    ['Pajak e-commerce ' . num($c['pph_persen'], 1) . '%', -$c['pph'], true,
+     num($c['pph_persen'], 1) . '% dari pendapatan setelah dikurang diskon'],
+    ['Penjualan bersih',           $c['penjualan_bersih'], false, 'dana diterima &minus; PPN &minus; pajak'],
+    ['HPP',                        -$c['hpp'],             true,  '% dari penjualan bersih'],
+    ['Laba bersih',                $c['laba'],             false, '% dari penjualan bersih'],
 ];
+// Baris HPP dan laba diukur terhadap penjualan bersih, sisanya terhadap kotor.
+$basisJual = ['HPP', 'Laba bersih'];
 ?>
 <div class="card">
   <h2>Rincian nilai <span class="muted" style="font-weight:400;font-size:13px">&mdash; persen dihitung terhadap pendapatan kotor</span></h2>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>Komponen</th><th class="num">Nilai</th><th class="num">% dari kotor</th>
-        <th class="num">Per unit</th><th>Keterangan</th>
+        <th>Komponen</th><th class="num">Nilai (Rp)</th><th class="num">Persentase</th>
+        <th class="num">Per unit</th><th>Catatan / acuan</th>
       </tr></thead>
       <tbody>
       <?php foreach ($rantai as [$nama, $nilai, $pengurang, $ket]):
-          $tebal = in_array($nama, ['Dana diterima bersih', 'Laba bersih'], true);
-          $qty = (int) $total['qty']; ?>
+          $tebal = in_array($nama, ['Dana diterima bersih', 'Penjualan bersih', 'Laba bersih'], true);
+          $qty = (int) $total['qty'];
+          // Baris HPP dan laba diukur terhadap penjualan bersih, sisanya kotor.
+          $basis = in_array($nama, $basisJual, true) ? $c['penjualan_bersih'] : $c['harga']; ?>
         <tr<?= $tebal ? ' style="background:rgba(0,0,0,.02)"' : '' ?>>
           <td><?= $tebal ? '<b>' . e($nama) . '</b>' : e($nama) ?></td>
           <td class="num <?= $pengurang || $nilai < 0 ? 'neg' : '' ?>">
             <?= $tebal ? '<b>' . rp($nilai) . '</b>' : rp($nilai) ?>
           </td>
-          <td class="num <?= $pengurang || $nilai < 0 ? 'neg' : 'muted' ?>"><?= pct($nilai, $kotor) ?></td>
+          <td class="num <?= $pengurang || $nilai < 0 ? 'neg' : 'muted' ?>">
+            <?php
+            // Baris pengurang sudah bertanda minus di kolom nilai, jadi
+            // persennya ditampilkan positif. Baris hasil mempertahankan
+            // tandanya supaya rugi terbaca sebagai marjin negatif.
+            $angka = $pengurang ? abs($nilai) : $nilai;
+            echo $basis > 0 ? num($angka / $basis * 100, 2) . '%' : '-';
+            ?>
+          </td>
           <td class="num muted"><?= $qty > 0 ? rp($nilai / $qty) : '-' ?></td>
-          <td class="muted"><?= e($ket) ?></td>
+          <td class="muted"><?= $ket ?></td>
         </tr>
       <?php endforeach; ?>
       </tbody>
     </table>
   </div>
   <p class="help" style="margin-top:10px">
-    Marjin laba = laba bersih &divide; dana diterima bersih =
-    <b><?= $marjin === null ? '-' : num($marjin, 1) . '%' ?></b>.
-    Inilah angka yang dipakai uji kewajaran HPP.
+    Marjin laba = laba bersih &divide; penjualan bersih =
+    <b><?= $c['marjin'] === null ? '-' : num($c['marjin'], 2) . '%' ?></b>.
+    Urutan dan dasar hitungnya sama dengan Laba &amp; Biaya serta simulasi harga.
   </p>
 </div>
 

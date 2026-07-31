@@ -130,8 +130,44 @@ final class Auth
         return in_array($a, ['all', 'only', 'none'], true) ? $a : 'all';
     }
 
+    /**
+     * Masuk sebagai direksi: hanya kata sandi, tanpa username.
+     *
+     * Dipakai halaman berbagi tersendiri (direksi.php) supaya bisa dikirim ke
+     * direksi tanpa membagikan akun operasional. Hak aksesnya tetap mengikuti
+     * kolom permissions akun tersebut, jadi admin bisa mengaturnya dari menu
+     * Pengguna seperti akun lain.
+     */
+    public static function attemptDireksi(string $password): bool
+    {
+        $row = Db::one(
+            'SELECT id, password_hash FROM users WHERE username = ? AND is_active = 1',
+            [Perm::AKUN_DIREKSI]
+        );
+        if ($row === null || !password_verify($password, (string) $row['password_hash'])) {
+            return false;
+        }
+        session_regenerate_id(true);
+        $_SESSION['uid'] = (int) $row['id'];
+        self::$loaded = false;
+        self::$cache = null;
+        Db::q('UPDATE users SET last_login_at = NOW() WHERE id = ?', [$row['id']]);
+        return true;
+    }
+
+    /** Apakah sesi ini masuk lewat halaman direksi? */
+    public static function isDireksi(): bool
+    {
+        return (self::user()['username'] ?? '') === Perm::AKUN_DIREKSI;
+    }
+
     public static function attempt(string $username, string $password): bool
     {
+        // Akun direksi sengaja tidak bisa dipakai di halaman masuk biasa -
+        // pintunya hanya direksi.php.
+        if ($username === Perm::AKUN_DIREKSI) {
+            return false;
+        }
         $row = Db::one('SELECT id, password_hash FROM users WHERE username = ? AND is_active = 1', [$username]);
         if ($row === null || !password_verify($password, (string) $row['password_hash'])) {
             return false;

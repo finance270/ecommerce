@@ -91,8 +91,32 @@ function q(string $key, ?string $default = null): ?string
 }
 
 /** Rentang tanggal aktif dari query string, dengan nilai bawaan. */
+/**
+ * Rentang tanggal baku: 1 Januari tahun ini sampai akhir bulan lalu.
+ *
+ * Bulan berjalan sengaja tidak diikutkan karena datanya belum lengkap - dana
+ * settlement baru masuk beberapa hari setelah pesanan selesai, jadi bulan yang
+ * sedang berlangsung selalu terlihat lebih kecil dari kenyataan.
+ *
+ * @return array{0:string,1:string}
+ */
+function defaultDateRange(): array
+{
+    $from = date('Y-01-01');
+    $to   = date('Y-m-t', strtotime('first day of last month'));
+    if ($to < $from) {
+        // Bulan Januari: bulan lalu masih tahun sebelumnya, jadi pakai bulan
+        // berjalan supaya rentangnya tidak terbalik.
+        $to = date('Y-m-t');
+    }
+    return [$from, $to];
+}
+
 function dateRange(string $defaultFrom = '', string $defaultTo = ''): array
 {
+    if ($defaultFrom === '' && $defaultTo === '') {
+        [$defaultFrom, $defaultTo] = defaultDateRange();
+    }
     $from = q('from', $defaultFrom !== '' ? $defaultFrom : null);
     $to   = q('to', $defaultTo !== '' ? $defaultTo : null);
     $valid = static fn(?string $d): ?string =>

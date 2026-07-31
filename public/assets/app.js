@@ -107,6 +107,8 @@
         .then(function (html) {
           el.innerHTML = html;
           drawAll();
+          // Beri tahu pengukur menu/tabel supaya header tabel baru ikut menempel.
+          document.dispatchEvent(new Event('bagianDimuat'));
         })
         .catch(function (err) {
           el.innerHTML = '<p class="muted">Bagian ini gagal dimuat (' + err.message +
@@ -164,4 +166,37 @@
       });
     }
   });
+})();
+
+/*
+ * Menu menempel & header kolom ikut menempel.
+ *
+ * Tinggi menu diukur dari elemennya (bukan angka tetap) karena jumlah tab
+ * berbeda-beda per pengguna dan bisa membungkus jadi dua baris.
+ */
+(function () {
+  function ukurMenu() {
+    var bar = document.querySelector('.topbar');
+    if (bar) {
+      document.documentElement.style.setProperty('--topbar-h', bar.offsetHeight + 'px');
+    }
+  }
+
+  // Gulir mendatar hanya dipasang pada tabel yang memang tidak muat, supaya
+  // tabel lain tetap bisa punya header yang menempel ke layar.
+  function aturGulir() {
+    document.querySelectorAll('.table-wrap').forEach(function (w) {
+      var t = w.querySelector('table');
+      if (!t) { return; }
+      w.classList.remove('xscroll');
+      if (t.scrollWidth > w.clientWidth + 1) { w.classList.add('xscroll'); }
+    });
+  }
+
+  function segarkan() { ukurMenu(); aturGulir(); }
+
+  document.addEventListener('DOMContentLoaded', segarkan);
+  window.addEventListener('resize', segarkan);
+  // Bagian yang dimuat belakangan (data-lazy) menambah tabel baru.
+  document.addEventListener('bagianDimuat', segarkan);
 })();

@@ -63,6 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $role = in_array($_POST['role'] ?? '', ['admin', 'staff', 'viewer'], true)
                     ? (string) $_POST['role'] : (string) $target['role'];
+                // Akun direksi dibagikan lewat tautan terbuka dengan kata sandi
+                // saja - menjadikannya admin berarti membuka seluruh aplikasi
+                // di balik satu kata sandi pendek.
+                if ($target['username'] === Perm::AKUN_DIREKSI && $role === 'admin') {
+                    throw new RuntimeException('Akun direksi tidak boleh dijadikan admin.');
+                }
                 $salary = in_array($_POST['salary_access'] ?? '', ['all', 'only', 'none'], true)
                     ? (string) $_POST['salary_access'] : (string) $target['salary_access'];
                 $aktif = isset($_POST['is_active']) ? 1 : 0;
@@ -101,6 +107,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $target = Db::one('SELECT username, role FROM users WHERE id = ?', [$id]);
                 if ($target === null) {
                     throw new RuntimeException('Pengguna tidak ditemukan.');
+                }
+                if ($target['username'] === Perm::AKUN_DIREKSI) {
+                    throw new RuntimeException(
+                        'Akun direksi tidak bisa dihapus. Nonaktifkan saja bila tautannya '
+                        . 'tidak dipakai lagi.'
+                    );
                 }
                 $adminLain = (int) Db::val(
                     "SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1 AND id <> ?",
