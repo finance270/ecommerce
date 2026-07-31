@@ -359,15 +359,53 @@ angkanya bisa ditelusuri.
 Rantai nilainya, semua diukur terhadap harga jual:
 
 ```
-  harga jual terdaftar        100%
+  harga jual terdaftar (termasuk PPN)   100%
+- PPN 11% keluaran
+= peredaran bruto (DPP, tanpa PPN)
+- PPh Pasal 22 e-commerce 0,5% × DPP
 - pengembalian dana (refund)
-- potongan & diskon           ← bisa dibuka rinciannya
-- biaya platform              ← bisa dibuka rinciannya
+- potongan & diskon                     ← bisa dibuka rinciannya
+- biaya platform                        ← bisa dibuka rinciannya
 ± penyesuaian & selisih
-= dana diterima bersih
+= dana bersih setelah pajak
 - HPP per unit
 = laba bersih  →  marjin
 ```
+
+### Pajak pada simulasi
+
+**PPN 11%.** Harga di etalase dianggap **sudah termasuk PPN**, jadi bagian PPN-nya bukan
+pendapatan penjual melainkan titipan yang disetor ke negara. DPP dihitung mundur
+(`harga ÷ 1,11`). Isi **0** kalau bukan Pengusaha Kena Pajak.
+
+Ada juga pilihan **HPP termasuk PPN masukan yang bisa dikreditkan** — bagi PKP, PPN yang dibayar
+saat membeli barang bisa dikreditkan sehingga modal efektifnya `HPP ÷ 1,11`. Nilai awalnya
+**dimatikan**, karena tidak semua pemasok menerbitkan faktur pajak; lebih aman menganggap tidak
+bisa dikreditkan lalu dinyalakan bila memang bisa.
+
+**PPh Pasal 22 e-commerce 0,5% — PMK 37/2025.** Marketplace ditunjuk memungut PPh Pasal 22 dari
+pedagang dalam negeri:
+
+| Hal | Ketentuan |
+| --- | --- |
+| Tarif | 0,5% |
+| Dasar pengenaan | peredaran bruto **tidak termasuk PPN/PPnBM** — karena itu dikalikan DPP, bukan harga jual |
+| Dipungut oleh | marketplace, saat pembayaran diterima (bukan disetor sendiri seperti dulu) |
+| Sifat | bukan pajak baru dan bukan tambahan beban: jadi pengurang PPh Final terutang, atau kredit pajak di SPT Tahunan |
+| Bebas | orang pribadi dengan peredaran bruto sampai Rp 500 juta setahun, dengan menyampaikan surat pernyataan ke marketplace |
+| Pemungut pertama | Tokopedia, Shopee, Lazada, Blibli — efektif **1 Agustus 2026** |
+
+Walau bisa dikreditkan, kasnya tetap keluar lebih dulu sehingga tetap diperhitungkan saat
+menentukan harga. Isi **0** kalau Anda termasuk yang dibebaskan.
+
+> Kalau pesanan acuan **sudah** dipungut PPh oleh marketplace (data setelah Agustus 2026),
+> nilainya sudah termasuk di biaya platform. Aplikasi mendeteksinya dan menolkan tarif PPh
+> otomatis supaya tidak terhitung dua kali.
+
+Karena pajak memotong lebih dulu, marjin setelah pajak selalu lebih kecil daripada marjin di
+**Uji kewajaran HPP** (yang murni dari data settlement). Supaya tidak membingungkan, halaman
+simulasi menyebut keduanya — misalnya *"Marjin 65,0% berada di rentang wajar. Sebelum pajak
+marjinnya 70,7% — itu angka yang dipakai uji kewajaran HPP."*
 
 **Rincian potongan dan biaya platform** bisa dibuka per komponen dengan nama asli dari berkas
 platform (biaya komisi, biaya layanan, biaya administrasi, ongkir, dan seterusnya). Tanda nilainya

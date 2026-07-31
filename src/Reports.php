@@ -953,6 +953,7 @@ final class Reports
     {
         $kosong = ['qty' => 0, 'harga' => 0.0, 'refund' => 0.0, 'potongan' => 0.0,
                    'biaya' => 0.0, 'lain' => 0.0, 'bersih' => 0.0, 'harga_unit' => null,
+                   'pajak_platform' => 0.0,
                    'refund_pct' => null, 'potongan_pct' => null, 'biaya_pct' => null,
                    'lain_pct' => null, 'bersih_pct' => null];
 
@@ -962,11 +963,13 @@ final class Reports
                     SUM(st.refund_amount  * i.subtotal_before_disc / o.items_subtotal_before) AS refund,
                     SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
                     SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
+                    SUM(st.fee_pajak      * i.subtotal_before_disc / o.items_subtotal_before) AS pajak_platform,
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih
              FROM (SELECT platform, order_id,
                           SUM(refund_amount)  AS refund_amount,
                           SUM(total_potongan) AS total_potongan,
                           SUM(total_fee)      AS total_fee,
+                          SUM(fee_pajak)      AS fee_pajak,
                           SUM(net_amount)     AS net_amount
                    FROM settlements
                    WHERE platform = ? AND order_id = ? AND settlement_date IS NOT NULL
@@ -999,6 +1002,10 @@ final class Reports
             'biaya'        => $biaya,
             'lain'         => $lain,
             'bersih'       => $bersih,
+            // Kalau marketplace sudah memungut PPh Pasal 22, nilainya ada di
+            // sini dan sudah termasuk dalam biaya - simulasi tidak boleh
+            // menambahkannya lagi.
+            'pajak_platform' => abs((float) ($row['pajak_platform'] ?? 0)),
             'harga_unit'   => $harga / $qty,
             'refund_pct'   => $refund / $harga * 100,
             'potongan_pct' => $potongan / $harga * 100,
