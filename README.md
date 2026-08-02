@@ -86,6 +86,7 @@ Setelah itu:
 | Keperluan | Tempatnya |
 | --- | --- |
 | Menambah PT (database dibuat otomatis) | menu **Perusahaan** &rarr; Tambah PT |
+| Mengubah nama PT dan nama databasenya | menu **Perusahaan** &rarr; kolom Perusahaan / Database |
 | Menentukan siapa boleh membuka PT mana | menu **Perusahaan** &rarr; Pengguna |
 | Menentukan tab apa yang dia lihat di dalam PT | menu **Pengguna** di PT tersebut |
 | Berpindah PT | nama PT di kanan atas |
@@ -105,6 +106,14 @@ Peran di halaman Perusahaan:
 
 Menambah PT hanya bisa dilakukan akun pemilik aplikasi (email pertama). Akun lain
 dibuatkan olehnya dari halaman Perusahaan.
+
+**Mengganti nama database.** MariaDB tidak punya perintah untuk itu, jadi aplikasi
+memindahkan seluruh tabelnya ke database bernama baru lalu menghapus yang lama.
+Pemindahannya hanya mengubah catatan &mdash; datanya tidak disalin &mdash; sehingga selesai
+dalam hitungan detik berapa pun besarnya (95.000 pesanan + 771.000 baris biaya: 0,35 detik).
+View dibuat ulang dari `schema.sql` karena definisinya menyebut nama database lama.
+Database lama hanya dihapus setelah dipastikan kosong, dan nama tujuan ditolak bila
+sudah dipakai. Tetap lakukan saat tidak ada yang sedang mengunggah berkas.
 
 #### Cara 2 &mdash; berkas `config/tenants.json` (cara lama)
 

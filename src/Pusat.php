@@ -325,6 +325,44 @@ final class Pusat
     }
 
     /**
+     * Mengganti nama database satu PT, beserta isinya.
+     *
+     * @return array{tabel:int,view:int,lama_dibuang:bool,sisa:int}
+     */
+    public static function ubahDatabase(int $perusahaanId, string $dbBaru): array
+    {
+        $dbBaru = trim($dbBaru);
+        $pdo = self::pdo();
+        if ($pdo === null) {
+            throw new RuntimeException('Database pusat belum siap.');
+        }
+
+        $st = $pdo->prepare('SELECT db_name FROM perusahaan WHERE id = ?');
+        $st->execute([$perusahaanId]);
+        $lama = $st->fetchColumn();
+        if ($lama === false) {
+            throw new RuntimeException('Perusahaan tidak ditemukan.');
+        }
+
+        $st = $pdo->prepare('SELECT COUNT(*) FROM perusahaan WHERE db_name = ? AND id <> ?');
+        $st->execute([$dbBaru, $perusahaanId]);
+        if ((int) $st->fetchColumn() > 0) {
+            throw new RuntimeException('Database tersebut sudah dipakai perusahaan lain.');
+        }
+
+        $hasil = Pemasang::pindahDatabase((string) $lama, $dbBaru);
+
+        // Catatan pusat diperbarui terakhir: kalau pemindahannya gagal di
+        // tengah jalan, daftar pusat masih menunjuk database yang benar.
+        $pdo->prepare('UPDATE perusahaan SET db_name = ? WHERE id = ?')->execute([$dbBaru, $perusahaanId]);
+
+        // Sambungan yang sedang dipakai menunjuk database yang barusan hilang.
+        Tenant::lupakan();
+        Db::reset();
+        return $hasil;
+    }
+
+    /**
      * Mendaftarkan PT yang databasenya SUDAH ada ke dalam daftar pusat.
      *
      * Dipakai saat pemasangan lama beralih ke akun pusat: databasenya tidak

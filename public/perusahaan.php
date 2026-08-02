@@ -85,6 +85,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             Pusat::ubahNama((int) $pt['id'], (string) ($_POST['nama'] ?? ''));
             $ok = 'Nama PT diperbarui.';
 
+        } elseif ($aksi === 'ubah_db') {
+            $pt = ptMilik($akunId, (string) ($_POST['pt'] ?? ''));
+            $h = Pusat::ubahDatabase((int) $pt['id'], (string) ($_POST['db'] ?? ''));
+            $ok = 'Database ' . $pt['db_name'] . ' dipindahkan ke ' . trim((string) $_POST['db'])
+                . ' (' . $h['tabel'] . ' tabel, ' . $h['view'] . ' view dibuat ulang).'
+                . ($h['lama_dibuang'] ? '' : ' Database lama masih menyisakan ' . $h['sisa']
+                    . ' objek sehingga tidak dibuang - periksa manual.');
+
         } elseif ($aksi === 'ubah_peran') {
             $pt = ptMilik($akunId, (string) ($_POST['pt'] ?? ''));
             $target = (int) ($_POST['akun_id'] ?? 0);
@@ -164,7 +172,22 @@ render_head('Perusahaan', '');
                 <?php endif; ?>
               </td>
               <td class="muted" style="font-family:ui-monospace,monospace;font-size:12px"><?= e($p['kode']) ?></td>
-              <td class="muted" style="font-family:ui-monospace,monospace;font-size:12px"><?= e($p['db_name']) ?></td>
+              <td class="muted" style="font-family:ui-monospace,monospace;font-size:12px">
+                <?php if ($p['peran'] === 'pemilik'): ?>
+                  <form method="post" style="display:flex;gap:6px;align-items:center"
+                        onsubmit="return confirm('Pindahkan seluruh isi database <?= e($p['db_name']) ?> ke nama baru?\n\nSemua tabel dipindahkan lalu database lama dihapus. Pastikan tidak ada yang sedang mengunggah data.')">
+                    <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
+                    <input type="hidden" name="aksi" value="ubah_db">
+                    <input type="hidden" name="pt" value="<?= e($p['kode']) ?>">
+                    <input type="text" name="db" value="<?= e($p['db_name']) ?>" required
+                           pattern="[A-Za-z0-9_-]{1,64}" aria-label="Nama database"
+                           style="min-width:160px;font-family:ui-monospace,monospace;font-size:12px">
+                    <button class="btn ghost sm" type="submit">Pindah</button>
+                  </form>
+                <?php else: ?>
+                  <?= e($p['db_name']) ?>
+                <?php endif; ?>
+              </td>
               <td><span class="badge <?= $p['peran'] === 'staf' ? 'muted' : 'ok' ?>"><?= e($p['peran']) ?></span></td>
               <td style="text-align:right;white-space:nowrap">
                 <?php if ($p['peran'] === 'pemilik'): ?>
@@ -181,6 +204,13 @@ render_head('Perusahaan', '');
         </tbody>
       </table>
     </div>
+    <p class="help" style="margin-top:10px;margin-bottom:0">
+      Nama PT bebas diubah kapan saja. <b>Nama database</b> juga bisa diubah:
+      seluruh tabelnya dipindahkan ke nama baru lalu database lama dihapus.
+      Pemindahannya hanya mengubah catatan, bukan menyalin data, jadi cepat
+      berapa pun besarnya &mdash; tapi lakukan saat tidak ada yang sedang
+      mengunggah berkas.
+    </p>
   <?php endif; ?>
 </div>
 

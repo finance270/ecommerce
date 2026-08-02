@@ -58,6 +58,104 @@ final class Pemasang
     }
 
     /**
+     * Memindahkan seluruh isi satu database ke nama database lain.
+     *
+     * MariaDB tidak punya perintah "ganti nama database", jadi caranya adalah
+     * memindahkan tabelnya satu per satu ke database baru. Untungnya
+     * RENAME TABLE hanya mengubah catatan, bukan menyalin data - jadi
+     * secepat apa pun besar datanya, dan seluruh tabel dipindahkan dalam satu
+     * pernyataan sehingga tidak ada keadaan setengah jadi.
+     *
+     * View sengaja tidak ikut dipindahkan: definisinya menyebut nama database
+     * lama secara eksplisit, sehingga kalau dipindahkan justru membawa nama
+     * lama ikut serta. Lebih bersih dibuat ulang dari schema.sql.
+     *
+     * @return array{tabel:int,view:int,lama_dibuang:bool,sisa:int}
+     */
+    public static function pindahDatabase(string $lama, string $baru): array
+    {
+        $baru = trim($baru);
+        if (!Tenant::namaDbAman($lama) || !Tenant::namaDbAman($baru)) {
+            throw new RuntimeException('Nama database hanya boleh huruf, angka, garis bawah, dan strip.');
+        }
+        if ($lama === $baru) {
+            throw new RuntimeException('Nama database barunya sama dengan yang sekarang.');
+        }
+        if ($baru === Pusat::namaDb()) {
+            throw new RuntimeException('Nama itu dipakai database pusat, pilih nama lain.');
+        }
+
+        $root = new PDO(
+            sprintf('mysql:host=%s;port=%d;charset=utf8mb4', Config::get('db_host'), Config::get('db_port')),
+            (string) Config::get('db_user'),
+            (string) Config::get('db_pass'),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+        );
+
+        $st = $root->prepare('SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = ?');
+        $st->execute([$baru]);
+        if ((int) $st->fetchColumn() > 0) {
+            throw new RuntimeException(
+                'Database ' . $baru . ' sudah ada. Pilih nama lain supaya tidak menimpa data yang ada di sana.'
+            );
+        }
+
+        // Nama kolom information_schema diberi alias supaya tidak bergantung
+        // pada besar-kecil huruf yang dikembalikan server.
+        $st = $root->prepare(
+            'SELECT table_name AS nama, table_type AS jenis
+               FROM information_schema.tables WHERE table_schema = ?'
+        );
+        $st->execute([$lama]);
+
+        $tabel = [];
+        $view  = [];
+        foreach ($st->fetchAll() as $r) {
+            if ((string) $r['jenis'] === 'VIEW') {
+                $view[] = (string) $r['nama'];
+            } else {
+                $tabel[] = (string) $r['nama'];
+            }
+        }
+        if ($tabel === []) {
+            throw new RuntimeException('Database ' . $lama . ' tidak berisi tabel apa pun.');
+        }
+
+        $root->exec(
+            'CREATE DATABASE `' . $baru . '` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
+        );
+
+        foreach ($view as $v) {
+            $root->exec('DROP VIEW IF EXISTS `' . $lama . '`.`' . $v . '`');
+        }
+
+        $pasangan = [];
+        foreach ($tabel as $t) {
+            $pasangan[] = '`' . $lama . '`.`' . $t . '` TO `' . $baru . '`.`' . $t . '`';
+        }
+        $root->exec('RENAME TABLE ' . implode(', ', $pasangan));
+
+        // Menjalankan skema di database baru akan membuat ulang view-nya;
+        // tabel yang sudah pindah dilewati karena CREATE TABLE IF NOT EXISTS.
+        self::jalankanSkema(self::sambung($baru));
+
+        // Database lama baru dibuang setelah dipastikan benar-benar kosong.
+        $st = $root->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ?');
+        $st->execute([$lama]);
+        $sisa = (int) $st->fetchColumn();
+        if ($sisa === 0) {
+            $root->exec('DROP DATABASE `' . $lama . '`');
+        }
+
+        return [
+            'tabel'        => count($tabel),
+            'view'         => count($view),
+            'lama_dibuang' => $sisa === 0,
+            'sisa'         => $sisa,
+        ];
+    }
+
+    /**
      * Menjalankan database/schema.sql.
      *
      * @return int jumlah pernyataan yang dijalankan
