@@ -80,6 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             Pusat::tambahAnggota((int) $target['id'], $pt, $peran);
             $ok = $email . ' sekarang bisa membuka ' . $pt['nama'] . ' sebagai ' . $peran . '.';
 
+        } elseif ($aksi === 'ubah_nama') {
+            $pt = ptMilik($akunId, (string) ($_POST['pt'] ?? ''));
+            Pusat::ubahNama((int) $pt['id'], (string) ($_POST['nama'] ?? ''));
+            $ok = 'Nama PT diperbarui.';
+
         } elseif ($aksi === 'ubah_peran') {
             $pt = ptMilik($akunId, (string) ($_POST['pt'] ?? ''));
             $target = (int) ($_POST['akun_id'] ?? 0);
@@ -144,7 +149,20 @@ render_head('Perusahaan', '');
         <tbody>
           <?php foreach ($daftar as $p): ?>
             <tr>
-              <td><b><?= e($p['nama']) ?></b></td>
+              <td>
+                <?php if ($p['peran'] === 'pemilik'): ?>
+                  <form method="post" style="display:flex;gap:6px;align-items:center">
+                    <input type="hidden" name="csrf" value="<?= e(Auth::csrf()) ?>">
+                    <input type="hidden" name="aksi" value="ubah_nama">
+                    <input type="hidden" name="pt" value="<?= e($p['kode']) ?>">
+                    <input type="text" name="nama" value="<?= e($p['nama']) ?>" required
+                           style="min-width:180px" aria-label="Nama PT">
+                    <button class="btn ghost sm" type="submit">Simpan</button>
+                  </form>
+                <?php else: ?>
+                  <b><?= e($p['nama']) ?></b>
+                <?php endif; ?>
+              </td>
               <td class="muted" style="font-family:ui-monospace,monospace;font-size:12px"><?= e($p['kode']) ?></td>
               <td class="muted" style="font-family:ui-monospace,monospace;font-size:12px"><?= e($p['db_name']) ?></td>
               <td><span class="badge <?= $p['peran'] === 'staf' ? 'muted' : 'ok' ?>"><?= e($p['peran']) ?></span></td>

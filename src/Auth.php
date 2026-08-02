@@ -271,6 +271,53 @@ final class Auth
         return (self::user()['username'] ?? '') === Perm::AKUN_DIREKSI;
     }
 
+    /** Batas jumlah PT yang ditelusuri saat mencari asal sebuah username. */
+    public const LINTAS_MAKS = 25;
+
+    /**
+     * Cari di PT mana sebuah username + kata sandi berlaku.
+     *
+     * Akun yang dibuat lewat menu Pengguna hanya ada di database PT-nya
+     * sendiri, sedangkan pengunjung baru selalu mendarat di PT pertama. Tanpa
+     * penelusuran ini, orang tersebut akan ditolak terus tanpa tahu sebabnya -
+     * satu-satunya jalan masuknya adalah tautan ?db= yang mungkin tidak pernah
+     * dia terima.
+     *
+     * Yang dikembalikan adalah SEMUA PT yang cocok; pemanggilnya menolak bila
+     * lebih dari satu, karena berarti username dan kata sandi itu tidak cukup
+     * untuk menentukan orangnya.
+     *
+     * @return string[] kode PT yang cocok
+     */
+    public static function cariPerusahaan(string $username, string $password, string $kecuali = ''): array
+    {
+        // Akun direksi memakai kata sandi awal yang sama di semua PT, jadi
+        // tidak boleh ikut ditelusuri. Pintunya memang hanya direksi.php.
+        if ($username === Perm::AKUN_DIREKSI || $username === '' || $password === '') {
+            return [];
+        }
+
+        $cocok = [];
+        $n = 0;
+        foreach (Tenant::all() as $kode => $t) {
+            if ($kode === $kecuali || ++$n > self::LINTAS_MAKS) {
+                continue;
+            }
+            try {
+                $st = Pemasang::sambung((string) $t['db'])
+                    ->prepare('SELECT password_hash FROM users WHERE username = ? AND is_active = 1');
+                $st->execute([$username]);
+                $row = $st->fetch();
+            } catch (Throwable) {
+                continue;   // database PT itu sedang tidak bisa dihubungi
+            }
+            if ($row !== false && password_verify($password, (string) $row['password_hash'])) {
+                $cocok[] = $kode;
+            }
+        }
+        return $cocok;
+    }
+
     public static function attempt(string $username, string $password): bool
     {
         // Akun direksi sengaja tidak bisa dipakai di halaman masuk biasa -

@@ -10,6 +10,10 @@ function render_head(string $title, string $active = ''): void
 {
     $user = Auth::user();
     $app = e(Config::get('app_name'));
+    // Saat melayani beberapa PT, nama PT-lah yang dipakai sebagai judul.
+    // Tanpa ini semua PT tampak sama persis dan gampang tertukar - terutama
+    // saat dua PT dibuka di dua tab peramban.
+    $judul = Tenant::banyak() ? e(Tenant::aktif()['nama']) : $app;
     // Menu hanya menampilkan tab yang boleh dibuka. Ini semata untuk
     // kerapian - pengamanan sesungguhnya ada di Auth::requireTab() pada
     // masing-masing halaman.
@@ -27,13 +31,13 @@ function render_head(string $title, string $active = ''): void
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= e($title) ?> &middot; <?= $app ?></title>
+<title><?= e($title) ?> &middot; <?= $judul ?></title>
 <link rel="stylesheet" href="<?= e(assetUrl('assets/app.css')) ?>">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#128200;</text></svg>">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><?= $app ?></div>
+  <div class="brand" title="<?= $app ?>"><?= $judul ?></div>
   <nav>
     <?php foreach ($nav as $href => [$label, $key]): ?>
       <a href="<?= $href ?>" class="<?= $active === $key ? 'active' : '' ?>"><?= e($label) ?></a>
@@ -41,13 +45,8 @@ function render_head(string $title, string $active = ''): void
   </nav>
   <?php if ($user !== null): ?>
     <div class="user">
-      <?php if (Tenant::banyak() || Auth::akun() !== null): ?>
-        <?php if (Auth::akun() !== null): ?>
-          <a href="pilih-perusahaan.php" title="Ganti PT"><?= e(Tenant::aktif()['nama']) ?></a>
-        <?php else: ?>
-          <span class="badge muted" title="Perusahaan yang sedang dibuka"><?= e(Tenant::aktif()['nama']) ?></span>
-        <?php endif; ?>
-        &middot;
+      <?php if (Auth::akun() !== null): ?>
+        <a href="pilih-perusahaan.php" title="Buka PT lain">Ganti PT</a> &middot;
       <?php endif; ?>
       <?= e($user['full_name'] ?: $user['username']) ?> &middot; <a href="logout.php">Keluar</a>
     </div>

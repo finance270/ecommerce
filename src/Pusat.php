@@ -312,6 +312,18 @@ final class Pusat
         return ['kode' => $kode, 'nama' => $nama, 'db' => $db];
     }
 
+    /** Mengganti nama tampilan satu PT. Kode dan databasenya tidak berubah. */
+    public static function ubahNama(int $perusahaanId, string $nama): void
+    {
+        $nama = trim($nama);
+        if ($nama === '') {
+            throw new RuntimeException('Nama perusahaan tidak boleh kosong.');
+        }
+        self::pdo()?->prepare('UPDATE perusahaan SET nama = ? WHERE id = ?')
+            ->execute([$nama, $perusahaanId]);
+        Tenant::lupakan();
+    }
+
     /**
      * Mendaftarkan PT yang databasenya SUDAH ada ke dalam daftar pusat.
      *

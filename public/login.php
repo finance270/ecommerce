@@ -58,8 +58,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: index.php');
         exit;
     } else {
-        $err = 'Email/username atau kata sandi salah.';
-        usleep(400000);
+        // Username tidak ada di PT yang sedang terpilih. Sebelum menolak, cari
+        // dulu di PT lain: akun yang dibuat lewat menu Pengguna hanya ada di
+        // database PT-nya, sementara pengunjung baru selalu mendarat di PT
+        // pertama - dan orangnya tidak punya cara tahu itu.
+        $cocok = str_contains($id, '@') ? [] : Auth::cariPerusahaan($id, $pass, Tenant::kodeAktif());
+
+        if (count($cocok) === 1 && Tenant::pilih($cocok[0]) && Auth::attempt($id, $pass)) {
+            header('Location: index.php');
+            exit;
+        }
+        if (count($cocok) > 1) {
+            $err = 'Username ini dipakai di beberapa PT. Pilih perusahaannya dulu di atas.';
+        } else {
+            $err = 'Email/username atau kata sandi salah.';
+            usleep(400000);
+        }
     }
 }
 ?><!doctype html>
@@ -77,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <p class="sub">Analisis penjualan Tokopedia &amp; Shopee</p>
     <?php if ($err !== null): ?><div class="alert bad"><?= e($err) ?></div><?php endif; ?>
 
-    <?php if (!$adaAkunPusat && Tenant::banyak()): ?>
+    <?php if (Tenant::banyak()): ?>
       <form method="get" class="field" style="margin-bottom:14px">
         <label for="db">Perusahaan</label>
         <select name="db" id="db" onchange="this.form.submit()" style="width:100%">
@@ -89,6 +103,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </select>
         <noscript><button class="btn ghost sm" type="submit" style="margin-top:6px">Pilih</button></noscript>
       </form>
+      <?php if ($adaAkunPusat): ?>
+        <p class="help" style="margin-top:-8px;margin-bottom:14px">
+          Perlu dipilih hanya bila Anda masuk dengan <b>username</b>.
+          Yang masuk dengan email tidak terpengaruh pilihan ini.
+        </p>
+      <?php endif; ?>
     <?php endif; ?>
 
     <form method="post">
