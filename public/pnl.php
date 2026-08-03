@@ -131,8 +131,31 @@ render_head('Laba & Biaya', 'pnl');
 <div class="card">
   <h2>
     Ringkasan: dari pendapatan kotor sampai laba usaha
-    <button class="btn ghost sm no-print" type="button" onclick="window.print()"
-            style="float:right">Cetak / simpan PDF</button>
+    <span class="no-print" style="float:right;display:flex;gap:8px;align-items:center">
+      <?php
+      // Tabel laba per produk sangat lebar. Pada A4 kolomnya jadi sempit dan
+      // judulnya terpaksa membungkus; kertas Legal/F4 yang lebih panjang
+      // memberi ruang lebih. Pilihannya disimpan di peramban masing-masing.
+      $kertas = [
+        'A4 landscape'     => 'A4 mendatar',
+        'Legal landscape'  => 'Legal mendatar',
+        'Letter landscape' => 'Letter mendatar',
+        // F4/Folio tidak punya nama baku di CSS, jadi ukurannya ditulis
+        // langsung. Urutannya lebar lalu tinggi - dibalik supaya mendatar.
+        '330mm 215mm'      => 'F4/Folio mendatar',
+        'A3 landscape'     => 'A3 mendatar',
+        'A4 portrait'      => 'A4 tegak',
+      ];
+      ?>
+      <label style="font-size:12px;color:var(--muted,#667)">Kertas
+        <select data-kertas style="font-size:12px;padding:2px 4px">
+          <?php foreach ($kertas as $nilai => $label): ?>
+            <option value="<?= e($nilai) ?>"><?= e($label) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <button class="btn ghost sm" type="button" onclick="window.print()">Cetak / simpan PDF</button>
+    </span>
   </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
     <span class="no-print">Urutan dan dasar hitungnya sama persis dengan <b>simulasi harga</b> pada

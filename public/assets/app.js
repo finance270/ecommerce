@@ -117,6 +117,40 @@
     });
   }
 
+  /* Ukuran kertas untuk hasil cetak.
+
+     Aturan @page tidak bisa dipilih lewat kelas pada <body> - ia bukan aturan
+     untuk elemen, melainkan untuk kotak halaman. Jadi satu-satunya cara
+     mengubahnya dari layar adalah menulis ulang isi elemen <style>-nya. */
+  var KERTAS_KUNCI = 'ukuranKertas';
+
+  function terapkanKertas(nilai) {
+    var el = document.getElementById('gayaKertas');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'gayaKertas';
+      document.head.appendChild(el);
+    }
+    el.textContent = '@media print{@page{size:' + nilai + ';margin:10mm}}';
+  }
+
+  function siapkanKertas() {
+    var pilih = document.querySelector('[data-kertas]');
+    if (!pilih) return;
+    var tersimpan = null;
+    try { tersimpan = localStorage.getItem(KERTAS_KUNCI); } catch (e) { /* mode privat */ }
+    if (tersimpan) {
+      pilih.value = tersimpan;
+      // Nilai yang tidak ada lagi di daftar membuat select kosong; kembalikan.
+      if (!pilih.value) { pilih.selectedIndex = 0; }
+    }
+    terapkanKertas(pilih.value);
+    pilih.addEventListener('change', function () {
+      terapkanKertas(pilih.value);
+      try { localStorage.setItem(KERTAS_KUNCI, pilih.value); } catch (e) { /* abaikan */ }
+    });
+  }
+
   /* Tombol "Tampilkan semua" pada tabel yang diringkas.
      Dipasang sebagai satu pendengar di document, bukan skrip di dalam
      potongan halamannya: potongan itu disisipkan lewat innerHTML, dan
@@ -134,6 +168,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     drawAll();
     loadLazy();
+    siapkanKertas();
 
     var t;
     window.addEventListener('resize', function () {
