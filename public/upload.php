@@ -12,7 +12,23 @@ $results = [];
 $errors  = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!Auth::checkCsrf($_POST['csrf'] ?? null)) {
+    // Berkas yang melebihi post_max_size membuat PHP membuang SELURUH isi
+    // kiriman - termasuk token - sehingga tanpa pemeriksaan ini pesannya
+    // menjadi "sesi kedaluwarsa" dan orangnya mencoba masuk ulang berkali-kali
+    // padahal sesinya baik-baik saja. Laporan Penghasilan Shopee sekarang
+    // berukuran belasan MB, jadi ini mudah terjadi.
+    $kirimanKosong = $_POST === [] && $_FILES === []
+        && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0;
+
+    if ($kirimanKosong) {
+        $batas = ini_get('post_max_size') ?: '?';
+        $errors[] = ['name' => '-', 'msg' =>
+            'Berkas terlalu besar untuk diterima server. Batas saat ini '
+            . $batas . ' (post_max_size), sedangkan yang dikirim '
+            . humanBytes((int) $_SERVER['CONTENT_LENGTH']) . '. '
+            . 'Naikkan post_max_size dan upload_max_filesize pada PHP, '
+            . 'atau unggah berkasnya satu per satu.'];
+    } elseif (!Auth::checkCsrf($_POST['csrf'] ?? null)) {
         $errors[] = ['name' => '-', 'msg' => 'Sesi kedaluwarsa. Muat ulang halaman lalu unggah lagi.'];
     } else {
         $force = (string) ($_POST['dataset'] ?? '');

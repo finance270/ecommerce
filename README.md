@@ -178,9 +178,16 @@ Jenis berkas dikenali otomatis.
 | Tokopedia — **Semua Pesanan** | `OrderSKUList` | Pesanan + rincian SKU, status, alamat, ongkir, kurir |
 | Tokopedia — **Transaksi/Penghasilan** | `Detail pesanan`, `Riwayat penarikan` | Settlement per pesanan, seluruh komponen biaya, penarikan dana ke bank |
 | Shopee — **Order** | `orders` | Pesanan + rincian produk, status, alamat, ongkir |
-| Shopee — **Laporan Penghasilan** | `Income`, `Service Fee Details` | Penghasilan per pesanan, biaya admin/layanan + rinciannya |
+| Shopee — **Laporan Penghasilan** | `Income` / `Penghasilan`, `Service Fee Details` / `Seller Fee` | Penghasilan per pesanan, biaya admin/layanan + rinciannya |
 
 Bisa mengunggah beberapa berkas sekaligus.
+
+> **Format Shopee berubah dari waktu ke waktu.** Sheet `Income` kini bernama `Penghasilan`,
+> kolom `Harga Asli Produk` jadi `Harga Produk`, dan kolom `Total Penghasilan` dihapus &mdash;
+> dana yang dilepas dihitung dari komponennya. Lembar itu juga memuat tiap pesanan **dua kali**:
+> sekali sebagai pesanan (`Lihat berdasarkan` = `Order`) dan sekali dipecah per SKU (`Sku`).
+> Hanya baris pesanan yang diambil; kalau keduanya ikut, seluruh nilai jadi dobel.
+> Kedua format sama-sama dilayani, jadi berkas lama tetap bisa diunggah ulang.
 
 Selain berkas platform, ada dua berkas yang Anda isi sendiri lewat **template** yang disediakan
 aplikasi: **HPP per produk** (menu HPP) dan **beban operasional** (menu Beban). Lihat bagian

@@ -68,7 +68,10 @@ final class Profiles
         if ($has('Detail pesanan') || $has('Riwayat penarikan')) {
             return self::info('tokopedia', 'settlement');
         }
-        if ($has('Income')) {
+        // 'Penghasilan' adalah nama baru sheet 'Income' pada ekspor Shopee
+        // berbahasa Indonesia. Keduanya dilayani supaya berkas lama tetap bisa
+        // diunggah ulang.
+        if ($has('Income') || $has('Penghasilan')) {
             return self::info('shopee', 'settlement');
         }
         if ($has('orders')) {
@@ -89,7 +92,13 @@ final class Profiles
                 if (str_contains($join, 'no. pesanan') && str_contains($join, 'status pesanan')) {
                     return self::info('shopee', 'order');
                 }
-                if (str_contains($join, 'no. pesanan') && str_contains($join, 'total penghasilan')) {
+                // Kolom "Total Penghasilan" hilang pada format Shopee yang baru;
+                // penanda yang tersisa adalah kolom "Lihat berdasarkan" yang
+                // memisahkan baris tingkat pesanan dari baris tingkat SKU.
+                if (str_contains($join, 'no. pesanan')
+                    && (str_contains($join, 'total penghasilan')
+                        || str_contains($join, 'tanggal dana dilepaskan')
+                        || str_contains($join, 'lihat berdasarkan'))) {
                     return self::info('shopee', 'settlement');
                 }
             }
@@ -289,11 +298,42 @@ final class Profiles
             'metode pembayaran pembeli'           => ['payment_method', 'text'],
             'nama kurir'                          => ['courier', 'text'],
             'harga asli produk'                   => ['gross_amount', 'money'],
+            // Nama baru untuk kolom yang sama; keduanya dipetakan supaya berkas
+            // lama maupun baru sama-sama terbaca.
+            'harga produk'                        => ['gross_amount', 'money'],
             'total penghasilan'                   => ['net_amount', 'money'],
+            'jumlah dibayar pembeli'              => ['buyer_payment', 'money'],
             'jumlah pengembalian dana ke pembeli' => ['refund_amount', 'money'],
             'total diskon produk'                 => ['discount_seller', 'money'],
         ];
     }
+
+    /**
+     * Kolom keterangan pada sheet Penghasilan (format Shopee terbaru).
+     *
+     * Shopee memisahkan lembarnya menjadi beberapa kelompok; hanya kelompok
+     * "Rincian Jumlah Pelepasan Dana" yang membentuk dana yang dilepas.
+     * Kolom di bawah ini ada di kelompok "Buyer Info" dan "Informasi
+     * Referensi" - angkanya nyata, tetapi bukan bagian dari perhitungan.
+     * Kalau ikut dijumlah, dana yang dilepas jadi tidak cocok dengan
+     * ringkasan resmi Shopee.
+     *
+     * Daftar ini khusus sheet tersebut, bukan untuk seluruh berkas Shopee:
+     * pada format lama sebagian nama yang sama berada di dalam perhitungan.
+     */
+    public const SHOPEE_KOLOM_KETERANGAN = [
+        'lihat berdasarkan',
+        'id produk',
+        'nama produk',
+        'metode pelepasan dana',
+        'tipe pesanan',
+        'jumlah dibayar pembeli',
+        'transaction fee rate (%)',
+        'rincian metode pembayaran',
+        'rencana cicilan (jika berlaku)',
+        'promo gratis ongkir dari penjual',
+        'kompensasi',
+    ];
 
     /** Kolom yang bukan angka biaya sehingga tidak ikut ke settlement_fees. */
     public static function settlementSkipColumns(string $platform): array
@@ -443,7 +483,13 @@ final class Profiles
             // ---- Shopee ------------------------------------------------
             // "Harga Asli Produk" adalah harga sebelum diskon apa pun.
             'harga asli produk'   => 'total',
+            'harga produk'        => 'total',
             'kompensasi'          => 'lainnya',
+            // Kolom baru pada format Shopee terkini.
+            'pph 22'                => 'pajak',
+            'ams service fee'       => 'layanan',
+            'return to seller fee'  => 'pengiriman',
+            'fbs fee'               => 'lainnya',
             // Sesuai pengelompokan Shopee sendiri, diskon produk dan voucher yang
             // ditanggung penjual masuk bagian PENDAPATAN (pengurang), bukan
             // "2. Total Pengeluaran". Dengan begini biaya platform yang tampil

@@ -522,15 +522,37 @@ final class Importer
         if ($reader->hasSheet('Income')) {
             $this->importSettlementSheet($reader, $platform, 'Income', 'no. pesanan');
         }
-        if ($reader->hasSheet('Service Fee Details')) {
-            $this->importServiceFeeDetails($reader, $platform, 'Service Fee Details');
+        // Nama baru sheet Income pada ekspor berbahasa Indonesia. Isinya
+        // berbeda susunan, jadi kolom keterangannya perlu dikecualikan.
+        if ($reader->hasSheet('Penghasilan')) {
+            $this->importSettlementSheet(
+                $reader,
+                $platform,
+                'Penghasilan',
+                'no. pesanan',
+                Profiles::SHOPEE_KOLOM_KETERANGAN
+            );
+        }
+        foreach (['Service Fee Details', 'Seller Fee'] as $sheet) {
+            if ($reader->hasSheet($sheet)) {
+                $this->importServiceFeeDetails($reader, $platform, $sheet);
+            }
         }
     }
 
-    private function importSettlementSheet(XlsxReader $reader, string $platform, string $sheet, string $idLabel): void
-    {
+    /**
+     * @param string[] $skipExtra kolom yang khusus sheet ini tidak boleh
+     *                            dihitung sebagai biaya
+     */
+    private function importSettlementSheet(
+        XlsxReader $reader,
+        string $platform,
+        string $sheet,
+        string $idLabel,
+        array $skipExtra = []
+    ): void {
         $map  = Profiles::settlementMap($platform);
-        $skip = array_flip(Profiles::settlementSkipColumns($platform));
+        $skip = array_flip(array_merge(Profiles::settlementSkipColumns($platform), $skipExtra));
 
         $hIdx = null;
         $headerLabels = [];
@@ -553,6 +575,18 @@ final class Importer
             if ($orderId === null || preg_match('/^[A-Za-z0-9\-_]{6,}$/', $orderId) !== 1) {
                 $stat['skipped']++;
                 continue;
+            }
+
+            // Format Shopee terbaru menulis pesanan yang sama dua kali: satu
+            // baris untuk seluruh pesanan ("Order"), lalu baris-baris pecahan
+            // per SKU ("Sku") yang jumlahnya sama. Hanya baris pesanan yang
+            // diambil - kalau keduanya masuk, seluruh nilai jadi dobel.
+            if (isset($hIdx['lihat berdasarkan'])) {
+                $lihat = mb_strtolower(trim((string) ($row[$hIdx['lihat berdasarkan']] ?? '')));
+                if ($lihat !== '' && $lihat !== 'order') {
+                    $stat['skipped']++;
+                    continue;
+                }
             }
             $stat['read']++;
 
@@ -605,6 +639,19 @@ final class Importer
             $rec['total_potongan'] = round($potonganTotal, 2);
             if ($platform === 'shopee') {
                 $rec['total_fee'] = round($feeTotal, 2);
+
+                // Format terbaru tidak lagi punya kolom "Total Penghasilan",
+                // jadi dana yang dilepas dihitung dari komponennya. Hasilnya
+                // sama persis dengan "Total yang Dilepas" pada sheet Summary -
+                // itulah yang dipakai untuk memastikan tidak ada komponen yang
+                // terlewat atau terhitung dua kali.
+                if (!isset($hIdx['total penghasilan'])) {
+                    $rec['net_amount'] = round(
+                        $rec['gross_amount'] + $rec['refund_amount']
+                        + $rec['total_potongan'] + $feeTotal,
+                        2
+                    );
+                }
             }
 
             $rec['row_hash'] = sha1(json_encode([$rec, $fees], JSON_UNESCAPED_UNICODE) ?: '');
