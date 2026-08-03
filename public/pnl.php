@@ -175,13 +175,30 @@ render_head('Laba & Biaya', 'pnl');
         $pJ = static fn(float $v): string => $c['penjualan_bersih'] > 0
             ? num($v / $c['penjualan_bersih'] * 100, 2) . '%' : '-';
 
-        /** Baris ringkas + rincian yang bisa dibuka-tutup. */
-        $blokPnl = static function (string $id, string $judul, float $total, array $items) use ($pH, $H): void { ?>
+        /**
+         * Baris ringkas + rincian yang bisa dibuka-tutup.
+         *
+         * $basisJual menentukan pembanding persentasenya. Biaya platform diukur
+         * terhadap pendapatan kotor karena dipotong dari sana, sedangkan beban
+         * operasional diukur terhadap penjualan bersih - itulah pendapatan yang
+         * benar-benar jadi milik penjual setelah potongan dan pajak, dan yang
+         * dipakai menghitung marjin di bawahnya.
+         */
+        $blokPnl = static function (
+            string $id,
+            string $judul,
+            float $total,
+            array $items,
+            bool $basisJual = false
+        ) use ($pH, $pJ): void {
+            $persen = $basisJual ? $pJ : $pH;
+            $acuan  = $basisJual ? '% dari penjualan bersih' : '% dari pendapatan kotor';
+            ?>
           <tr>
             <td><?= e($judul) ?></td>
             <td class="num neg"><?= rp(-$total) ?></td>
-            <td class="num neg"><?= $pH($total) ?></td>
-            <td class="muted" style="font-size:11.5px">% dari pendapatan kotor</td>
+            <td class="num neg"><?= $persen($total) ?></td>
+            <td class="muted" style="font-size:11.5px"><?= e($acuan) ?></td>
             <td>
               <?php if ($items !== []): ?>
                 <button class="btn ghost sm no-print" type="button"
@@ -193,7 +210,7 @@ render_head('Laba & Biaya', 'pnl');
             <tr class="rinci <?= e($id) ?>" hidden>
               <td style="padding-left:26px" class="muted">&mdash; <?= e($it['label']) ?></td>
               <td class="num <?= $it['nilai'] < 0 ? 'neg' : 'pos' ?>"><?= rp($it['nilai']) ?></td>
-              <td class="num muted"><?= $pH(abs($it['nilai'])) ?></td>
+              <td class="num muted"><?= $persen(abs($it['nilai'])) ?></td>
               <td class="muted" style="font-size:11.5px"><?= e($it['ket']) ?></td>
               <td></td>
             </tr>
@@ -298,7 +315,7 @@ render_head('Laba & Biaya', 'pnl');
           <td></td>
         </tr>
 
-        <?php $blokPnl('rBeban', 'Beban operasional', (float) $c['beban'], $rinciBeban); ?>
+        <?php $blokPnl('rBeban', 'Beban operasional', (float) $c['beban'], $rinciBeban, true); ?>
 
         <tr style="background:rgba(0,0,0,.02);font-weight:700">
           <td><b>Laba usaha</b></td>

@@ -77,7 +77,7 @@ if ($section === 'produk') {
       <table class="lebar">
         <thead><tr>
           <th>#</th><th>Produk</th><th>Platform</th>
-          <th class="num">Pesanan</th><th class="num">Qty</th>
+          <th class="num">Qty</th>
           <th class="num">Kotor</th><th class="num">Diskon &amp; voucher</th>
           <th class="num">Biaya platform</th>
           <th class="num" title="Dana yang diterima dari platform, sebelum pajak">Bersih</th>
@@ -105,7 +105,6 @@ if ($section === 'produk') {
             <td class="muted"><?= $i + 1 ?></td>
             <td class="trunc" title="<?= e($p['produk']) ?>"><?= e($p['produk']) ?></td>
             <td><?= platformBadge((string) $p['platform']) ?></td>
-            <td class="num"><?= num($p['pesanan']) ?></td>
             <td class="num"><?= num($p['qty']) ?></td>
             <td class="num"><?= rp($p['kotor']) ?></td>
             <td class="num <?= (float) $p['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['potongan']) ?></td>
@@ -124,7 +123,7 @@ if ($section === 'produk') {
           </tr>
         <?php endforeach; ?>
         <?php if ($produk === []): ?>
-          <tr><td colspan="15" class="muted">
+          <tr><td colspan="14" class="muted">
             Belum bisa dihitung. Perlu berkas pesanan <i>dan</i> berkas laporan penghasilan
             untuk periode yang sama.
           </td></tr>
@@ -132,7 +131,7 @@ if ($section === 'produk') {
         </tbody>
         <?php if ($produk !== []): ?>
         <tfoot><tr>
-          <td colspan="4">Total <?= num(count($produk)) ?> produk</td>
+          <td colspan="3">Total <?= num(count($produk)) ?> produk</td>
           <td class="num"><?= num($pt['qty']) ?></td>
           <td class="num"><?= rp($pt['kotor']) ?></td>
           <td class="num neg"><?= rp($pt['potongan']) ?></td>
