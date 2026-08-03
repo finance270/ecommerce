@@ -70,6 +70,28 @@ function render_foot(): void
 }
 
 /**
+ * Kepala laporan yang HANYA muncul di atas kertas.
+ *
+ * Di layar keterangan periode sudah terbaca dari kotak filter, tetapi kotak
+ * itu tidak ikut dicetak - hasil cetaknya jadi tidak menyebutkan sama sekali
+ * rentang tanggalnya, perusahaan mana, dan platform apa. Lembar yang beredar
+ * tanpa keterangan itu tidak bisa dipertanggungjawabkan.
+ */
+function render_periode_cetak(?string $from, ?string $to, ?string $platform): void
+{
+    $bagian = [];
+    $bagian[] = 'Periode <b>' . e(shortDate($from)) . ' &ndash; ' . e(shortDate($to)) . '</b>';
+    $bagian[] = 'Platform: <b>' . ($platform === null ? 'Semua' : e(ucfirst($platform))) . '</b>';
+    if (Tenant::banyak()) {
+        $bagian[] = e(Tenant::aktif()['nama']);
+    }
+    $bagian[] = 'dicetak ' . e(date('d/m/Y H:i'));
+    ?>
+    <p class="print-only sub" style="margin-top:-10px"><?= implode(' &middot; ', $bagian) ?></p>
+    <?php
+}
+
+/**
  * Baris filter standar (tanggal + platform) yang dipakai hampir semua laporan.
  */
 function render_filter(?string $from, ?string $to, ?string $platform, array $extra = []): void

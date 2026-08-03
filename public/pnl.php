@@ -77,6 +77,7 @@ render_head('Laba & Biaya', 'pnl');
   Pesanan batal dan retur juga tidak diakui meski uangnya sempat bergerak.
 </p>
 
+<?php render_periode_cetak($from, $to, $platform); ?>
 <?php render_filter($from, $to, $platform); ?>
 
 <?php if ($costSum['qty_tanpa_hpp'] > 0): ?>
