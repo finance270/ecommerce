@@ -14,7 +14,6 @@ $ring    = $pnl['ringkasan'];
 $kategori = $pnl['kategori'];
 $bridge  = Reports::bridge($from, $to, $platform);
 $bulanan = Reports::monthlySettlement($from, $to, $platform);
-$tarik   = Reports::withdrawals($from, $to, $platform);
 $tot     = Reports::bridgeTotals($bridge);
 $costSum = Reports::costSummary($from, $to, $platform);
 $beban   = Reports::expenseTotal($from, $to);
@@ -23,15 +22,12 @@ $bebanTersembunyi = Reports::expenseHidden($from, $to);
 
 $prodSort = q('psort', 'bersih');
 
-// Dua bagian terberat (alokasi per produk & rincian tiap komponen biaya)
-// diambil lewat permintaan terpisah supaya halaman langsung tampil dan
-// tidak menggantung saat data sudah menumpuk.
+// Bagian terberat (alokasi settlement ke tiap produk) diambil lewat permintaan
+// terpisah supaya halaman langsung tampil dan tidak menggantung saat data sudah
+// menumpuk.
 $lazyParams = ['from' => $from, 'to' => $to, 'platform' => $platform];
 $lazyProduk = 'pnl_section.php?' . http_build_query(
     array_filter($lazyParams + ['section' => 'produk', 'psort' => $prodSort], static fn($v) => $v !== null && $v !== '')
-);
-$lazyBiaya = 'pnl_section.php?' . http_build_query(
-    array_filter($lazyParams + ['section' => 'biaya'], static fn($v) => $v !== null && $v !== '')
 );
 
 $kotor  = $tot['kotor'];
@@ -76,41 +72,6 @@ render_head('Laba & Biaya', 'pnl');
 </p>
 
 <?php render_filter($from, $to, $platform); ?>
-
-<?php
-// Uang yang bergerak pada periode ini tetapi tidak masuk laporan. Ditampilkan
-// terbuka supaya penurunan angka tidak disangka kesalahan hitung - sebagian
-// besar biasanya hanya berkas pesanan yang belum diunggah.
-$cakupan = Reports::cakupanLabaRugi($from, $to, $platform);
-$luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'] + $cakupan['tanpa_produk'];
-?>
-<?php if ($luar > 0): ?>
-  <div class="alert info">
-    <b>Yang tidak masuk laporan ini.</b>
-    Dari <?= num($cakupan['baris']) ?> baris settlement pada periode ini,
-    <?php if ($cakupan['tanpa_pesanan'] > 0): ?>
-      <b><?= num($cakupan['tanpa_pesanan']) ?></b> baris (<?= rp($cakupan['bersih_tanpa_pesanan'], true) ?>)
-      belum diketahui pesanannya &mdash; berkas <i>Semua Pesanan</i>/<i>Order</i> periode terkait
-      belum diunggah, jadi tanggal dan statusnya belum ada.
-      <?= tabLink('monitoring', 'monitoring.php', 'Lihat periode mana &rarr;') ?>
-    <?php endif; ?>
-    <?php if ($cakupan['tidak_selesai'] > 0): ?>
-      <?= $cakupan['tanpa_pesanan'] > 0 ? '<br>' : '' ?>
-      <b><?= num($cakupan['tidak_selesai']) ?></b> baris
-      (<?= rp($cakupan['bersih_tidak_selesai'], true) ?>) berasal dari pesanan
-      <b>batal atau retur</b>, jadi memang tidak diakui sebagai penjualan.
-    <?php endif; ?>
-    <?php if ($cakupan['tanpa_produk'] > 0): ?>
-      <br>
-      <b><?= num($cakupan['tanpa_produk']) ?></b> baris berupa biaya yang dibebankan pada
-      pesanan <b>tanpa nilai produk</b> &mdash; biaya platform
-      <?= rp($cakupan['biaya_tanpa_produk'], true) ?>. Tidak ada produk yang bisa
-      menanggungnya, jadi tidak ikut dihitung di sini agar ringkasan ini sama persis
-      dengan tabel laba per produk. Angka pada laporan platform akan lebih besar
-      sebesar itu.
-    <?php endif; ?>
-  </div>
-<?php endif; ?>
 
 <?php if ($costSum['qty_tanpa_hpp'] > 0): ?>
   <div class="alert warn">
@@ -475,21 +436,6 @@ $luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'] + $cakupan['tanpa_
   </div>
 </div>
 
-<div class="card">
-  <h2>
-    Rincian setiap komponen biaya
-    <a class="btn ghost sm" href="<?= e(exportLink('fee_detail')) ?>">Ekspor CSV</a>
-  </h2>
-  <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Nama komponen persis seperti pada berkas ekspor platform, sehingga angkanya bisa ditelusuri balik
-    ke laporan asli saat audit.
-  </p>
-  <div data-lazy="<?= e($lazyBiaya) ?>">
-    <p class="loading">Memuat rincian komponen biaya&hellip;</p>
-    <noscript><a href="<?= e($lazyBiaya) ?>">Buka rincian komponen biaya</a></noscript>
-  </div>
-</div>
-
 <?php if ($bebanCat !== []): ?>
 <div class="card">
   <h2>
@@ -519,33 +465,6 @@ $luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'] + $cakupan['tanpa_
 </div>
 <?php endif; ?>
 
-<?php if ($tarik !== []): ?>
-<div class="card">
-  <h2>Penarikan dana ke rekening bank</h2>
-  <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Dipakai untuk mencocokkan saldo platform dengan mutasi rekening bank.
-    Hanya <b>dana keluar</b> yang ditampilkan &mdash; baris bernilai positif pada berkas
-    platform adalah dana masuk dari penjualan, bukan penarikan.
-  </p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Tanggal</th><th>Platform</th><th>Status</th><th class="num">Jumlah transaksi</th><th class="num">Total</th></tr></thead>
-      <tbody>
-      <?php $totTarik = 0.0; foreach ($tarik as $t): $totTarik += (float) $t['total']; ?>
-        <tr>
-          <td class="nowrap"><?= shortDate($t['withdraw_date']) ?></td>
-          <td><?= platformBadge((string) $t['platform']) ?></td>
-          <td><span class="badge <?= $t['status'] === 'Transferred' ? 'ok' : 'info' ?>"><?= e($t['status']) ?></span></td>
-          <td class="num"><?= num($t['jumlah']) ?></td>
-          <td class="num"><?= rp($t['total']) ?></td>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-      <tfoot><tr><td colspan="4">Total penarikan</td><td class="num"><?= rp($totTarik) ?></td></tr></tfoot>
-    </table>
-  </div>
-</div>
-<?php endif; ?>
 <script>
 // Buka-tutup baris rincian. Baris yang tertutup memakai [hidden] sehingga
 // otomatis tidak ikut tercetak - hasil cetak selalu sama dengan tampilan.

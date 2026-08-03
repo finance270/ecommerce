@@ -241,7 +241,7 @@ akan **0**.
 | **Pesanan** | Cari/filter seluruh pesanan, buka detail per pesanan |
 | **Produk** | Produk & varian terlaris, qty terjual, omzet, retur |
 | **Performa** | Rekap mingguan & bulanan + pertumbuhan, metode bayar, kurir, provinsi |
-| **Laba & Biaya** | Ringkasan lengkap dari pendapatan kotor sampai **laba usaha** (biaya platform & beban operasional bisa dibuka rinciannya, bisa dicetak jadi PDF), jembatan angka per platform, rekap bulanan, **laba per produk setelah pajak dan HPP**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
+| **Laba & Biaya** | Ringkasan lengkap dari pendapatan kotor sampai **laba usaha** (biaya platform & beban operasional bisa dibuka rinciannya, bisa dicetak jadi PDF), jembatan angka per platform, rekap bulanan, **laba per produk setelah pajak dan HPP**, struktur biaya per kategori, beban operasional per kategori. Rincian tiap komponen biaya dan penarikan dana tidak ditampilkan di halaman ini &mdash; keduanya tetap tersedia lewat **Ekspor CSV** dan menu Settlement |
 | **HPP** | Impor HPP per produk per bulan + **pemantauan produk yang belum ada HPP** |
 | **Beban** | Impor beban operasional per bulan (gaji, sewa, listrik, packaging, iklan, dll) |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |

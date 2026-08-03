@@ -36,21 +36,7 @@ if ($section === 'produk') {
     // memuat ulang halaman dengan pengaturan lain.
     $batasLayar = 100;
     $produk = Reports::productProfit($from, $to, $platform, 2000, (string) $prodSort);
-    $cover    = Reports::productNetCoverage($from, $to, $platform);
-    // Berbasis jumlah pesanan, bukan nilai: nilai settlement bisa negatif
-    // (pembalikan) sehingga persentase berbasis nilai bisa melewati 100%.
-    $cov = $cover['total_pesanan'] > 0
-        ? $cover['covered_pesanan'] / $cover['total_pesanan'] * 100 : 100.0;
     ?>
-    <?php if ($cover['covered_pesanan'] < $cover['total_pesanan']): ?>
-      <div class="alert warn" style="margin-bottom:14px">
-        Baru <b><?= number_format($cov, 1, ',', '.') ?>%</b> pesanan yang bisa dipecah ke produk
-        (<?= num($cover['covered_pesanan']) ?> dari <?= num($cover['total_pesanan']) ?> pesanan).
-        Sisanya settlement yang <b>berkas pesanannya belum diunggah</b>, sehingga isi produknya belum diketahui.
-        Unggah berkas <i>Semua Pesanan</i> / <i>Order</i> untuk periode terkait agar analisis ini lengkap.
-        <?= tabLink('monitoring', 'monitoring.php', 'Lihat periode mana yang kurang &rarr;') ?>
-      </div>
-    <?php endif; ?>
 
     <form method="get" class="filters" style="margin-bottom:14px">
       <?php foreach (['from' => $from, 'to' => $to, 'platform' => $platform] as $k => $v): ?>
@@ -87,28 +73,6 @@ if ($section === 'produk') {
       Kedua pajak dihitung dari nilai <i>setelah diskon</i>; pajak e-commerce hanya dikenakan
       pada pesanan sejak <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>.
     </p>
-    <?php
-    // Satu produk yang dijual di dua platform menempati DUA baris, karena
-    // biaya dan marjinnya memang berbeda di tiap platform. Variasi (ukuran,
-    // rasa) digabung ke nama produknya. Dihitung dan disebutkan supaya jumlah
-    // baris tidak disangka ada produk yang hilang.
-    $namaUnik = [];
-    $dobelPlatform = [];
-    foreach ($produk as $p) {
-        $namaUnik[$p['produk']] = true;
-        $dobelPlatform[$p['produk']] = ($dobelPlatform[$p['produk']] ?? 0) + 1;
-    }
-    $dua = count(array_filter($dobelPlatform, static fn(int $n): bool => $n > 1));
-    ?>
-    <p class="help" style="margin-bottom:10px">
-      <b><?= num(count($produk)) ?> baris</b> = <b><?= num(count($namaUnik)) ?> nama produk</b><?php
-        if ($dua > 0): ?>, <?= num($dua) ?> di antaranya dijual di dua platform sehingga
-        menempati dua baris &mdash; biaya dan marjinnya memang berbeda per platform<?php
-        endif; ?>.
-      Variasi (ukuran, rasa, kemasan) digabung ke nama produknya; rinciannya ada di menu
-      <a href="products.php">Produk</a>.
-    </p>
-
     <div class="table-wrap">
       <table class="lebar">
         <thead><tr>
@@ -186,18 +150,6 @@ if ($section === 'produk') {
       </table>
     </div>
 
-    <?php $tanpaProduk = Reports::biayaTanpaProduk($from, $to, $platform); ?>
-    <?php if ($tanpaProduk['baris'] > 0): ?>
-      <p class="help" style="margin-top:10px">
-        Angka di tabel ini <b>sama dengan ringkasan</b> di atas.
-        Di luar keduanya masih ada <?= num($tanpaProduk['baris']) ?> baris settlement berupa
-        biaya <?= rp($tanpaProduk['biaya'], true) ?> yang dibebankan pada pesanan
-        <b>tanpa nilai produk</b> &mdash; biasanya biaya yang muncul setelah pesanan batal.
-        Tidak ada produk yang bisa menanggungnya, jadi tidak ikut di mana pun;
-        laporan platform akan lebih besar sebesar itu.
-      </p>
-    <?php endif; ?>
-
     <?php if (count($produk) > $batasLayar): ?>
       <p class="help no-print" style="margin-top:10px">
         Ditampilkan <?= num($batasLayar) ?> teratas dari <?= num(count($produk)) ?> produk.
@@ -209,33 +161,6 @@ if ($section === 'produk') {
     <?php if (count($produk) >= 2000): ?>
       <p class="help">Dibatasi 2.000 produk. Pakai <b>Ekspor CSV</b> bila produknya lebih banyak.</p>
     <?php endif; ?>
-    <?php
-    exit;
-}
-
-if ($section === 'biaya') {
-    $detail = Reports::feeDetail($from, $to, $platform);
-    ?>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Platform</th><th>Komponen biaya (nama asli platform)</th><th>Kategori</th>
-          <th class="num">Jumlah transaksi</th><th class="num">Total</th>
-        </tr></thead>
-        <tbody>
-        <?php foreach ($detail as $d): $v = (float) $d['total']; ?>
-          <tr>
-            <td><?= platformBadge((string) $d['platform']) ?></td>
-            <td><?= e($d['fee_label']) ?></td>
-            <td><span class="badge muted"><?= e(Profiles::LABELS[$d['fee_category']] ?? $d['fee_category']) ?></span></td>
-            <td class="num"><?= num($d['jumlah_transaksi']) ?></td>
-            <td class="num <?= $v < 0 ? 'neg' : 'pos' ?>"><?= rp($v) ?></td>
-          </tr>
-        <?php endforeach; ?>
-        <?php if ($detail === []): ?><tr><td colspan="5" class="muted">Belum ada data.</td></tr><?php endif; ?>
-        </tbody>
-      </table>
-    </div>
     <?php
     exit;
 }

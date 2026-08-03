@@ -165,74 +165,22 @@ final class Reports
      *
      * Syarat statusnya sekaligus menyaring baris yang pesanannya belum
      * dikenal: selama berkas pesanannya belum diunggah, salinan itu masih
-     * kosong sehingga barisnya tidak ikut dihitung. Berapa banyak yang
-     * tersisih dilaporkan lewat cakupanLabaRugi().
+     * kosong sehingga barisnya tidak ikut dihitung. Menu Monitoring yang
+     * menunjukkan periode mana yang berkasnya masih kurang.
+     *
+     * Syarat terakhir membuang baris yang dibebankan pada pesanan tanpa nilai
+     * produk - misalnya biaya yang muncul setelah pesanan batal. Tidak ada
+     * produk yang bisa menanggungnya, jadi kalau ikut, ringkasan tidak akan
+     * pernah sama dengan tabel laba per produk.
      */
-    private static function filterPesanan(
-        ?string $from,
-        ?string $to,
-        ?string $platform,
-        string $alias = '',
-        bool $hanyaAdaProduk = true
-    ): array {
+    private static function filterPesanan(?string $from, ?string $to, ?string $platform, string $alias = ''): array
+    {
         [$w, $a] = self::filter('ord_date', $from, $to, $platform, $alias);
         $p = $alias !== '' ? $alias . '.' : '';
-        $w .= " AND {$p}ord_status = " . Db::conn()->quote(self::STATUS_DIAKUI);
-
-        // Baris yang dibebankan pada pesanan tanpa nilai produk tidak ikut.
-        // Tidak ada produk yang bisa menanggungnya, sehingga kalau ikut,
-        // ringkasan tidak akan pernah sama dengan tabel per produk. Angkanya
-        // tetap dilaporkan lewat cakupanLabaRugi() supaya tidak hilang begitu
-        // saja dari pandangan.
-        if ($hanyaAdaProduk) {
-            $w .= " AND {$p}ord_ada_produk = 1";
-        }
-        return [$w, $a];
-    }
-
-    /**
-     * Berapa bagian settlement yang ikut terhitung pada Laba & Biaya.
-     *
-     * Dua sebab sebuah baris tersisih: pesanannya belum diunggah sehingga
-     * statusnya belum diketahui, atau pesanannya memang tidak selesai
-     * (batal/retur). Keduanya dibedakan supaya jelas mana yang perlu
-     * ditindaklanjuti dengan mengunggah berkas.
-     *
-     * Rentangnya memakai tanggal settlement, karena inilah pertanyaannya:
-     * dari seluruh uang yang bergerak pada periode itu, berapa yang masuk
-     * laporan.
-     */
-    public static function cakupanLabaRugi(?string $from, ?string $to, ?string $platform): array
-    {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
-        $diakui = Db::conn()->quote(self::STATUS_DIAKUI);
-        $row = Db::one(
-            "SELECT COUNT(*) AS baris,
-                    COALESCE(SUM(net_amount), 0) AS bersih,
-                    SUM(ord_status IS NULL) AS tanpa_pesanan,
-                    COALESCE(SUM(CASE WHEN ord_status IS NULL THEN net_amount END), 0) AS bersih_tanpa_pesanan,
-                    SUM(ord_status IS NOT NULL AND ord_status <> {$diakui}) AS tidak_selesai,
-                    COALESCE(SUM(CASE WHEN ord_status IS NOT NULL AND ord_status <> {$diakui}
-                                      THEN net_amount END), 0) AS bersih_tidak_selesai,
-                    SUM(ord_status = {$diakui} AND ord_ada_produk = 0) AS tanpa_produk,
-                    COALESCE(SUM(CASE WHEN ord_status = {$diakui} AND ord_ada_produk = 0
-                                      THEN net_amount END), 0) AS bersih_tanpa_produk,
-                    COALESCE(SUM(CASE WHEN ord_status = {$diakui} AND ord_ada_produk = 0
-                                      THEN total_fee END), 0) AS biaya_tanpa_produk
-               FROM settlements WHERE {$w}",
-            $a
-        ) ?? [];
-
         return [
-            'baris'                => (int) ($row['baris'] ?? 0),
-            'bersih'               => (float) ($row['bersih'] ?? 0),
-            'tanpa_pesanan'        => (int) ($row['tanpa_pesanan'] ?? 0),
-            'bersih_tanpa_pesanan' => (float) ($row['bersih_tanpa_pesanan'] ?? 0),
-            'tidak_selesai'        => (int) ($row['tidak_selesai'] ?? 0),
-            'bersih_tidak_selesai' => (float) ($row['bersih_tidak_selesai'] ?? 0),
-            'tanpa_produk'         => (int) ($row['tanpa_produk'] ?? 0),
-            'bersih_tanpa_produk'  => (float) ($row['bersih_tanpa_produk'] ?? 0),
-            'biaya_tanpa_produk'   => (float) ($row['biaya_tanpa_produk'] ?? 0),
+            $w . " AND {$p}ord_status = " . Db::conn()->quote(self::STATUS_DIAKUI)
+               . " AND {$p}ord_ada_produk = 1",
+            $a,
         ];
     }
 
@@ -246,7 +194,7 @@ final class Reports
      */
     private static function filterBulanPesanan(?string $ym, ?string $platform): array
     {
-        $w = 'ord_status = ' . Db::conn()->quote(self::STATUS_DIAKUI);
+        $w = 'ord_status = ' . Db::conn()->quote(self::STATUS_DIAKUI) . ' AND ord_ada_produk = 1';
         $a = [];
         if ($ym !== null) {
             $awal = $ym . '-01';
@@ -783,41 +731,6 @@ final class Reports
              LIMIT {$limit}",
             $a
         );
-    }
-
-    /**
-     * Settlement yang tidak punya dasar untuk dipecah ke produk.
-     *
-     * Alokasi ke produk memakai porsi nilai produk terhadap nilai pesanan.
-     * Kalau pesanannya tidak punya nilai produk sama sekali - misalnya biaya
-     * yang dibebankan setelah pesanan batal, atau potongan yang berdiri
-     * sendiri - pembaginya nol dan tidak ada produk yang bisa menanggungnya.
-     *
-     * Baris seperti itu tetap masuk ringkasan Laba & Biaya (uangnya nyata),
-     * tetapi tidak muncul di tabel per produk. Selisih antara keduanya persis
-     * sebesar angka ini, jadi ditampilkan supaya kedua tabel bisa dicocokkan.
-     */
-    public static function biayaTanpaProduk(?string $from, ?string $to, ?string $platform): array
-    {
-        // Sengaja TANPA syarat ord_ada_produk: justru baris itulah yang
-        // hendak dihitung di sini.
-        [$w, $a] = self::filterPesanan($from, $to, $platform, 's', false);
-        $row = Db::one(
-            "SELECT COUNT(*) AS baris,
-                    COALESCE(SUM(s.total_fee), 0)      AS biaya,
-                    COALESCE(SUM(s.net_amount), 0)     AS bersih,
-                    COALESCE(SUM(s.total_potongan), 0) AS potongan
-               FROM settlements s
-              WHERE {$w} AND s.ord_ada_produk = 0",
-            $a
-        ) ?? [];
-
-        return [
-            'baris'    => (int) ($row['baris'] ?? 0),
-            'biaya'    => (float) ($row['biaya'] ?? 0),
-            'bersih'   => (float) ($row['bersih'] ?? 0),
-            'potongan' => (float) ($row['potongan'] ?? 0),
-        ];
     }
 
     /**
