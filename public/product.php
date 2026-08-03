@@ -156,8 +156,11 @@ $rantai = [
     ['Dana diterima bersih',       $c['dana_diterima'],    false, 'setelah diskon &minus; biaya platform'],
     ['PPN ' . num($c['ppn_persen'], 0) . '%', -$c['ppn'],  true,
      num($c['ppn_persen'], 0) . '% dari pendapatan setelah dikurang diskon'],
-    ['Pajak e-commerce ' . num($c['pph_persen'], 1) . '%', -$c['pph'], true,
-     num($c['pph_persen'], 1) . '% dari pendapatan setelah dikurang diskon'],
+    ['Pajak e-commerce ' . num(Tax::PPH_PERSEN, 1) . '%', -$c['pph'], true,
+     (float) $c['pph'] == 0.0
+        ? 'belum berlaku pada periode ini &mdash; dipungut sejak ' . date('d/m/Y', strtotime(Tax::PPH_MULAI))
+        : num(Tax::PPH_PERSEN, 1) . '% dari pendapatan setelah dikurang diskon, hanya untuk pesanan sejak '
+          . date('d/m/Y', strtotime(Tax::PPH_MULAI))],
     ['Penjualan bersih',           $c['penjualan_bersih'], false, 'dana diterima &minus; PPN &minus; pajak'],
     ['HPP',                        -$c['hpp'],             true,  '% dari penjualan bersih'],
     ['Laba bersih',                $c['laba'],             false, '% dari penjualan bersih'],

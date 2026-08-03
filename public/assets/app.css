@@ -241,7 +241,10 @@ tr.lebih { display: none; }
 body.lebih-tampil tr.lebih { display: table-row; }
 
 @media print {
-  @page { margin: 12mm; }
+  /* Mendatar, karena tabel laporan di sini lebar-lebar: rantai nilai per
+     produk saja sudah 15 kolom. Dengan kertas tegak kolom paling kanan -
+     justru laba dan marjinnya - terpotong hilang. */
+  @page { size: A4 landscape; margin: 10mm; }
 
   /* Di atas kertas laporan harus lengkap, tidak peduli sedang diringkas. */
   tr.lebih { display: table-row !important; }
@@ -262,10 +265,28 @@ body.lebih-tampil tr.lebih { display: table-row; }
 
   /* Tabel: header ikut terulang kalau tabelnya melewati satu halaman. */
   .table-wrap { overflow: visible !important; }
-  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  table {
+    width: 100%; border-collapse: collapse; font-size: 10pt;
+    /* Lebar kolom dibagi rata dulu, baru isinya menyesuaikan. Tanpa ini satu
+       nama produk yang panjang bisa mendorong tabel melebihi kertas dan
+       kolom terakhir hilang tanpa jejak. */
+    table-layout: fixed;
+  }
   thead { display: table-header-group; }
   tr { break-inside: avoid; page-break-inside: avoid; }
-  th, td { border: 1px solid #ccc; padding: 4px 6px; }
+  th, td {
+    border: 1px solid #ccc; padding: 4px 6px;
+    /* Teks panjang dibungkus, bukan dipotong: di atas kertas tidak ada
+       gulir mendatar, jadi apa pun yang keluar halaman hilang selamanya. */
+    overflow-wrap: anywhere; word-break: break-word; white-space: normal !important;
+  }
+  /* Nama produk boleh memakan tempat lebih, angka cukup sempit. */
+  td.trunc, th:nth-child(2) { max-width: none !important; width: 18%; }
+  td.num, th.num { width: auto; }
+
+  /* Tabel yang sangat lebar dikecilkan hurufnya agar tetap muat utuh. */
+  table.lebar { font-size: 8pt; }
+  table.lebar th, table.lebar td { padding: 2px 3px; }
 
   /* Warna status tetap terbaca saat dicetak hitam-putih. */
   .neg { color: #a02020 !important; }

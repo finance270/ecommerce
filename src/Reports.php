@@ -93,9 +93,20 @@ final class Reports
         $danaDiterima = array_key_exists('bersih', $r)
             ? (float) $r['bersih']
             : $setelahDiskon - $biaya - $lain;
-        $nilaiPpn      = $setelahDiskon * $ppn / 100;
-        $nilaiPph      = $setelahDiskon * $pph / 100;
-        $penjualan     = $danaDiterima - $nilaiPpn - $nilaiPph;
+        $nilaiPpn = $setelahDiskon * $ppn / 100;
+        // Laporan yang periodenya melintasi tanggal berlakunya PPh e-commerce
+        // sudah menghitung nominalnya per baris di SQL; nilai itu dipakai apa
+        // adanya. Menghitung ulang dengan satu tarif akan mengenakan pajak
+        // pada bulan yang sebenarnya belum dipungut.
+        $nilaiPph = array_key_exists('pph_nominal', $r)
+            ? abs((float) $r['pph_nominal'])
+            : $setelahDiskon * $pph / 100;
+        $penjualan = $danaDiterima - $nilaiPpn - $nilaiPph;
+        // Persentase yang ditampilkan mengikuti nominal yang benar-benar
+        // dipakai, supaya keterangan tarif tidak bertentangan dengan angkanya.
+        if (array_key_exists('pph_nominal', $r)) {
+            $pph = $setelahDiskon > 0 ? $nilaiPph / $setelahDiskon * 100 : 0.0;
+        }
 
         $labaKotor = $penjualan - $hpp;
 
@@ -329,7 +340,11 @@ final class Reports
                 COALESCE(SUM(refund_amount),0)     AS pengembalian,
                 COALESCE(SUM(adjustment_amount),0) AS penyesuaian,
                 COALESCE(SUM(total_fee),0)         AS total_biaya,
-                COALESCE(SUM(net_amount),0)        AS dana_diterima
+                COALESCE(SUM(net_amount),0)        AS dana_diterima,
+                -- PPh e-commerce dihitung per baris karena baru berlaku sejak
+                -- tanggal tertentu; laporan yang mencakup sebelum dan sesudah
+                -- tanggal itu jadi benar tanpa perlu dipecah dua.
+                COALESCE(" . self::pphSql('ord_date', self::KOTOR . ' + total_potongan') . ",0) AS pph_nominal
              FROM settlements WHERE {$w}",
             $a
         ) ?? [];
@@ -661,12 +676,20 @@ final class Reports
         );
     }
 
+    /**
+     * Penarikan dana ke rekening bank.
+     *
+     * Hanya baris bernilai MINUS yang diambil. Tabel ini menampung seluruh
+     * mutasi saldo platform, termasuk dana masuk dari penjualan - kalau
+     * semuanya ikut, angkanya bukan lagi "penarikan" melainkan mutasi saldo,
+     * dan totalnya nyaris saling meniadakan.
+     */
     public static function withdrawals(?string $from, ?string $to, ?string $platform): array
     {
         [$w, $a] = self::filter('withdraw_date', $from, $to, $platform);
         return Db::all(
             "SELECT platform, withdraw_date, COUNT(*) AS jumlah, SUM(amount) AS total, status
-             FROM withdrawals WHERE {$w}
+             FROM withdrawals WHERE {$w} AND amount < 0
              GROUP BY platform, withdraw_date, status
              ORDER BY withdraw_date DESC",
             $a
@@ -740,6 +763,41 @@ final class Reports
     }
 
     /**
+     * Settlement yang tidak punya dasar untuk dipecah ke produk.
+     *
+     * Alokasi ke produk memakai porsi nilai produk terhadap nilai pesanan.
+     * Kalau pesanannya tidak punya nilai produk sama sekali - misalnya biaya
+     * yang dibebankan setelah pesanan batal, atau potongan yang berdiri
+     * sendiri - pembaginya nol dan tidak ada produk yang bisa menanggungnya.
+     *
+     * Baris seperti itu tetap masuk ringkasan Laba & Biaya (uangnya nyata),
+     * tetapi tidak muncul di tabel per produk. Selisih antara keduanya persis
+     * sebesar angka ini, jadi ditampilkan supaya kedua tabel bisa dicocokkan.
+     */
+    public static function biayaTanpaProduk(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filterPesanan($from, $to, $platform, 's');
+        $row = Db::one(
+            "SELECT COUNT(*) AS baris,
+                    COALESCE(SUM(s.total_fee), 0)      AS biaya,
+                    COALESCE(SUM(s.net_amount), 0)     AS bersih,
+                    COALESCE(SUM(s.total_potongan), 0) AS potongan
+               FROM settlements s
+               LEFT JOIN orders o ON o.platform = s.platform AND o.order_id = s.order_id
+                                 AND o.items_subtotal_before > 0
+              WHERE {$w} AND o.id IS NULL",
+            $a
+        ) ?? [];
+
+        return [
+            'baris'    => (int) ($row['baris'] ?? 0),
+            'biaya'    => (float) ($row['biaya'] ?? 0),
+            'bersih'   => (float) ($row['bersih'] ?? 0),
+            'potongan' => (float) ($row['potongan'] ?? 0),
+        ];
+    }
+
+    /**
      * Berapa bagian settlement yang berhasil dialokasikan ke produk.
      * Sisanya = pesanan yang berkas pesanannya belum diunggah.
      */
@@ -785,6 +843,20 @@ final class Reports
                     ON pc.cost_key = i.cost_key AND pc.period_ym = st.period_ym";
     }
 
+    /**
+     * Potongan SQL untuk PPh e-commerce yang baru berlaku sejak tanggal
+     * tertentu.
+     *
+     * @param string $kolomTanggal kolom tanggal acuan pada baris tersebut
+     * @param string $dasar        ekspresi dasar pengenaan (setelah diskon)
+     */
+    private static function pphSql(string $kolomTanggal, string $dasar): string
+    {
+        $mulai = Db::conn()->quote(Tax::PPH_MULAI);
+        $tarif = Tax::PPH_PERSEN / 100;
+        return "SUM(CASE WHEN {$kolomTanggal} >= {$mulai} THEN ({$dasar}) * {$tarif} ELSE 0 END)";
+    }
+
     /** Sub-query settlement per pesanan + bulan periodenya. */
     private static function settlementPerOrderSql(string $where): string
     {
@@ -800,6 +872,7 @@ final class Reports
         // bulan - baris itu sendiri sudah tersaring oleh syarat statusnya.
         return "SELECT platform, order_id,
                        DATE_FORMAT(COALESCE(MAX(ord_date), MAX(settlement_date)),'%Y-%m') AS period_ym,
+                       COALESCE(MAX(ord_date), MAX(settlement_date)) AS period_awal,
                        SUM(" . self::KOTOR . ") AS gross_amount,
                        SUM(total_potongan)      AS total_potongan,
                        SUM(total_fee)           AS total_fee,
@@ -856,7 +929,11 @@ final class Reports
         $hpp       = 'SUM(i.qty * COALESCE(pc.cost_per_unit, 0))';
         $setelah   = "({$kotor} + {$potongan})";
         $ppn       = "({$setelah} * " . (Tax::PPN_PERSEN / 100) . ')';
-        $pph       = "({$setelah} * " . (Tax::PPH_PERSEN / 100) . ')';
+        // PPh e-commerce baru dipungut sejak tanggal berlakunya, jadi
+        // syaratnya per baris - bukan satu tarif untuk seluruh rentang.
+        // Laporan yang mencakup Juli dan Agustus sekaligus jadi benar tanpa
+        // perlu dipecah dua.
+        $pph       = '(' . self::pphSql('st.period_awal', "(st.gross_amount + st.total_potongan) * {$porsi}") . ')';
         $penjualan = "({$dana} - {$ppn} - {$pph})";
         $laba      = "({$penjualan} - {$hpp})";
 
@@ -1154,7 +1231,11 @@ final class Reports
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     SUM(i.qty * COALESCE(pc.cost_per_unit,0))          AS hpp,
                     SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END) AS qty_tanpa_hpp,
-                    MAX(pc.cost_per_unit)                             AS hpp_unit
+                    MAX(pc.cost_per_unit)                             AS hpp_unit,
+                    " . self::pphSql(
+                        'st.period_awal',
+                        '(st.gross_amount + st.total_potongan) * i.subtotal_before_disc / o.items_subtotal_before'
+                    ) . " AS pph_nominal
              FROM ({$sub}) st
              STRAIGHT_JOIN orders o
                  ON o.platform = st.platform AND o.order_id = st.order_id
@@ -1181,7 +1262,7 @@ final class Reports
         $t = [
             'pesanan' => 0, 'qty' => 0, 'qty_retur' => 0, 'kotor' => 0.0, 'potongan' => 0.0,
             'biaya' => 0.0, 'bersih' => 0.0, 'hpp' => 0.0,
-            'qty_tanpa_hpp' => 0,
+            'qty_tanpa_hpp' => 0, 'pph_nominal' => 0.0,
         ];
         foreach ($rows as $r) {
             foreach ($t as $k => $_) {

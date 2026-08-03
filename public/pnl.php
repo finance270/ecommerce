@@ -52,6 +52,10 @@ $c = Reports::rantaiLaba([
     'lain'     => -((float) $tot['penyesuaian'] + (float) $tot['selisih']),
     'hpp'      => $hpp,
     'beban'    => $beban,
+    // Nominal PPh dihitung per baris di SQL karena pemungutannya baru mulai
+    // 1 Agustus 2026. Periode sebelum itu menghasilkan 0, dan periode yang
+    // melintasi tanggal tersebut terkena hanya pada bagian setelahnya.
+    'pph_nominal' => $pnl['ringkasan']['pph_nominal'] ?? 0,
 ]);
 
 // Kategori yang benar-benar biaya (nilai negatif = beban).
@@ -155,9 +159,9 @@ $luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'];
             style="float:right">Cetak / simpan PDF</button>
   </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Urutan dan dasar hitungnya sama persis dengan <b>simulasi harga</b> pada menu HPP, jadi kedua
-    halaman tidak akan menunjukkan angka berbeda. Biaya platform dan beban operasional bisa dibuka
-    rinciannya; yang sedang terbuka ikut tercetak.
+    <span class="no-print">Urutan dan dasar hitungnya sama persis dengan <b>simulasi harga</b> pada
+    menu HPP, jadi kedua halaman tidak akan menunjukkan angka berbeda. </span>
+    Biaya platform dan beban operasional bisa dibuka rinciannya; yang sedang terbuka ikut tercetak.
   </p>
   <div class="table-wrap">
     <table>
@@ -257,11 +261,17 @@ $luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'];
           <td></td>
         </tr>
         <tr>
-          <td>Pajak e-commerce <?= num((float) $c['pph_persen'], 1) ?>%</td>
+          <td>Pajak e-commerce <?= num(Tax::PPH_PERSEN, 1) ?>%</td>
           <td class="num neg"><?= rp(-(float) $c['pph']) ?></td>
           <td class="num neg"><?= $pH((float) $c['pph']) ?></td>
           <td class="muted" style="font-size:11.5px">
-            <?= num((float) $c['pph_persen'], 1) ?>% dari pendapatan setelah dikurang diskon
+            <?php if ((float) $c['pph'] == 0.0): ?>
+              belum berlaku pada periode ini &mdash; dipungut sejak
+              <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>
+            <?php else: ?>
+              <?= num(Tax::PPH_PERSEN, 1) ?>% dari pendapatan setelah dikurang diskon,
+              hanya untuk pesanan sejak <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>
+            <?php endif; ?>
           </td>
           <td></td>
         </tr>
@@ -505,6 +515,8 @@ $luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'];
   <h2>Penarikan dana ke rekening bank</h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
     Dipakai untuk mencocokkan saldo platform dengan mutasi rekening bank.
+    Hanya <b>dana keluar</b> yang ditampilkan &mdash; baris bernilai positif pada berkas
+    platform adalah dana masuk dari penjualan, bukan penarikan.
   </p>
   <div class="table-wrap">
     <table>

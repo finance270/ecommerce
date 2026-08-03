@@ -78,16 +78,39 @@ if ($section === 'produk') {
     </form>
 
     <p class="help" style="margin-top:-4px;margin-bottom:10px">
-      Rantai nilainya sama dengan <a href="simulasi.php" target="_blank" rel="noopener">Simulasi Harga</a>:
+      <span class="no-print">Rantai nilainya sama dengan
+      <a href="simulasi.php" target="_blank" rel="noopener">Simulasi Harga</a>:</span>
       kotor &minus; diskon &minus; biaya platform = <b>bersih</b> (dana diterima),
       lalu dikurangi <b>PPN <?= number_format(Tax::PPN_PERSEN, 0, ',', '.') ?>%</b> dan
       <b>PPh <?= number_format(Tax::PPH_PERSEN, 1, ',', '.') ?>%</b> menjadi <b>penjualan bersih</b>,
       baru dikurangi HPP. Marjin dihitung dari penjualan bersih.
-      Kedua pajak dihitung dari nilai <i>setelah diskon</i>.
+      Kedua pajak dihitung dari nilai <i>setelah diskon</i>; pajak e-commerce hanya dikenakan
+      pada pesanan sejak <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>.
+    </p>
+    <?php
+    // Satu produk yang dijual di dua platform menempati DUA baris, karena
+    // biaya dan marjinnya memang berbeda di tiap platform. Variasi (ukuran,
+    // rasa) digabung ke nama produknya. Dihitung dan disebutkan supaya jumlah
+    // baris tidak disangka ada produk yang hilang.
+    $namaUnik = [];
+    $dobelPlatform = [];
+    foreach ($produk as $p) {
+        $namaUnik[$p['produk']] = true;
+        $dobelPlatform[$p['produk']] = ($dobelPlatform[$p['produk']] ?? 0) + 1;
+    }
+    $dua = count(array_filter($dobelPlatform, static fn(int $n): bool => $n > 1));
+    ?>
+    <p class="help" style="margin-bottom:10px">
+      <b><?= num(count($produk)) ?> baris</b> = <b><?= num(count($namaUnik)) ?> nama produk</b><?php
+        if ($dua > 0): ?>, <?= num($dua) ?> di antaranya dijual di dua platform sehingga
+        menempati dua baris &mdash; biaya dan marjinnya memang berbeda per platform<?php
+        endif; ?>.
+      Variasi (ukuran, rasa, kemasan) digabung ke nama produknya; rinciannya ada di menu
+      <a href="products.php">Produk</a>.
     </p>
 
     <div class="table-wrap">
-      <table>
+      <table class="lebar">
         <thead><tr>
           <th>#</th><th>Produk</th><th>Platform</th>
           <th class="num">Pesanan</th><th class="num">Qty</th>
@@ -162,6 +185,25 @@ if ($section === 'produk') {
         <?php endif; ?>
       </table>
     </div>
+
+    <?php $tanpaProduk = Reports::biayaTanpaProduk($from, $to, $platform); ?>
+    <?php if ($tanpaProduk['baris'] > 0): ?>
+      <div class="alert info" style="margin-top:12px">
+        <b>Kenapa total di sini beda dengan ringkasan di atas.</b>
+        <?= num($tanpaProduk['baris']) ?> baris settlement dibebankan pada pesanan yang
+        <b>tidak punya nilai produk</b> &mdash; biasanya biaya yang muncul setelah pesanan batal,
+        atau potongan yang berdiri sendiri. Tidak ada produk yang bisa menanggungnya, jadi
+        angkanya tidak bisa dipecah ke baris mana pun di tabel ini.
+        <table style="margin-top:8px;width:auto">
+          <tr><td>Biaya platform di tabel ini</td>
+              <td class="num neg"><?= rp($pt['biaya']) ?></td></tr>
+          <tr><td>Biaya tanpa nilai produk</td>
+              <td class="num neg"><?= rp($tanpaProduk['biaya']) ?></td></tr>
+          <tr><td><b>Jumlah &mdash; sama dengan ringkasan</b></td>
+              <td class="num neg"><b><?= rp($pt['biaya'] + $tanpaProduk['biaya']) ?></b></td></tr>
+        </table>
+      </div>
+    <?php endif; ?>
 
     <?php if (count($produk) > $batasLayar): ?>
       <p class="help no-print" style="margin-top:10px">
