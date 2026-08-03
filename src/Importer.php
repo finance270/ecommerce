@@ -534,6 +534,35 @@ final class Importer
             [$platform]
         )->rowCount();
 
+        // Pulihkan pendapatan kotor & diskon untuk baris format Shopee terbaru.
+        //
+        // Berkasnya hanya memberi harga SESUDAH diskon tanpa menyebut diskonnya,
+        // sedangkan berkas pesanan masih memuat harga sebelum diskon. Selisih
+        // keduanya itulah diskon yang hilang, jadi keduanya dikembalikan dari
+        // sana - dan karena yang dipindahkan hanya antara "kotor" dan
+        // "potongan", dana diterima maupun jembatan angkanya tidak berubah.
+        //
+        // Satu pesanan bisa punya beberapa baris settlement, jadi nilainya
+        // dibagi menurut porsi tiap baris - bukan diberikan penuh ke masing
+        // masing, yang akan melipatgandakan pendapatan kotornya.
+        $n += (int) Db::q(
+            "UPDATE settlements s
+                JOIN (SELECT platform, order_id, SUM(gross_amount) AS kotor
+                        FROM settlements
+                       WHERE kotor_neto = 1 AND platform = ?
+                       GROUP BY platform, order_id) t
+                  ON t.platform = s.platform AND t.order_id = s.order_id
+                JOIN orders o
+                  ON o.platform = s.platform AND o.order_id = s.order_id
+                SET s.total_potongan = s.total_potongan
+                        + (s.gross_amount - o.items_subtotal_before * s.gross_amount / t.kotor),
+                    s.gross_amount   = o.items_subtotal_before * s.gross_amount / t.kotor,
+                    s.kotor_neto     = 0
+              WHERE s.kotor_neto = 1 AND s.platform = ?
+                AND o.items_subtotal_before > 0 AND t.kotor <> 0",
+            [$platform, $platform]
+        )->rowCount();
+
         // Rincian biayanya menyimpan salinan yang sama supaya laporan komponen
         // biaya tidak perlu menempel ke tabel settlement - tabel ini yang
         // paling banyak barisnya.
@@ -688,6 +717,17 @@ final class Importer
             $rec['total_potongan'] = round($potonganTotal, 2);
             if ($platform === 'shopee') {
                 $rec['total_fee'] = round($feeTotal, 2);
+
+                // Format lama punya kolom "Total Diskon Produk" dan harganya
+                // SEBELUM diskon. Format baru menghapus kolom itu, dan
+                // "Harga Produk"-nya sudah SESUDAH diskon - terbukti sama
+                // persis dengan "Subtotal Pesanan" pada berkas pesanan.
+                //
+                // Tanpa penanda ini, bulan yang dilaporkan format baru akan
+                // tampak berdiskon nol dan pendapatan kotornya lebih rendah
+                // daripada bulan sebelumnya, padahal diskonnya tetap ada.
+                // Nilainya dipulihkan dari berkas pesanan di syncOrderRef().
+                $rec['kotor_neto'] = isset($hIdx['total diskon produk']) ? 0 : 1;
 
                 // Format terbaru tidak lagi punya kolom "Total Penghasilan",
                 // jadi dana yang dilepas dihitung dari komponennya. Hasilnya

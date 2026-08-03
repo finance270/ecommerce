@@ -159,6 +159,8 @@ function runMigrations(PDO $pdo, string $dbName): array
          "ALTER TABLE settlements ADD COLUMN ord_ada_produk TINYINT(1) NULL AFTER ord_status"],
         ['settlement_fees', 'ord_ada_produk',
          "ALTER TABLE settlement_fees ADD COLUMN ord_ada_produk TINYINT(1) NULL AFTER ord_status"],
+        ['settlements', 'kotor_neto',
+         "ALTER TABLE settlements ADD COLUMN kotor_neto TINYINT(1) NOT NULL DEFAULT 0 AFTER ord_ada_produk"],
     ];
 
     $done = [];

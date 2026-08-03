@@ -234,6 +234,11 @@ CREATE TABLE IF NOT EXISTS settlements (
   -- bisa dipecah ke produk mana pun, sehingga tidak ikut Laba & Biaya -
   -- kalau ikut, ringkasannya tidak akan pernah sama dengan tabel per produk.
   ord_ada_produk    TINYINT(1)   NULL,
+  -- Penanda baris dari format Shopee terbaru, yang harga produknya sudah
+  -- dipotong diskon dan tidak lagi punya kolom "Total Diskon Produk".
+  -- Dikembalikan ke bentuk sebelum-diskon memakai nilai dari berkas pesanan,
+  -- lalu ditandai 0 supaya tidak diperbaiki dua kali.
+  kotor_neto        TINYINT(1)   NOT NULL DEFAULT 0,
 
   gross_amount      DECIMAL(18,2) NOT NULL DEFAULT 0,
   discount_seller   DECIMAL(18,2) NOT NULL DEFAULT 0,
