@@ -131,7 +131,7 @@
       el.id = 'gayaKertas';
       document.head.appendChild(el);
     }
-    el.textContent = '@media print{@page{size:' + nilai + ';margin:10mm}}';
+    el.textContent = '@media print{@page{size:' + nilai + ';margin:8mm}}';
   }
 
   function siapkanKertas() {

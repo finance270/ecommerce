@@ -244,7 +244,7 @@ body.lebih-tampil tr.lebih { display: table-row; }
   /* Mendatar, karena tabel laporan di sini lebar-lebar: rantai nilai per
      produk saja sudah 15 kolom. Dengan kertas tegak kolom paling kanan -
      justru laba dan marjinnya - terpotong hilang. */
-  @page { size: A4 landscape; margin: 10mm; }
+  @page { size: A4 landscape; margin: 8mm; }
 
   /* Di atas kertas laporan harus lengkap, tidak peduli sedang diringkas. */
   tr.lebih { display: table-row !important; }
@@ -265,35 +265,42 @@ body.lebih-tampil tr.lebih { display: table-row; }
 
   /* Tabel: header ikut terulang kalau tabelnya melewati satu halaman. */
   .table-wrap { overflow: visible !important; }
-  table {
-    width: 100%; border-collapse: collapse; font-size: 10pt;
-    /* Lebar kolom dibagi rata dulu, baru isinya menyesuaikan. Tanpa ini satu
-       nama produk yang panjang bisa mendorong tabel melebihi kertas dan
-       kolom terakhir hilang tanpa jejak. */
-    table-layout: fixed;
-  }
+  /* Lebar kolom mengikuti isinya. Kolom angka minta lebar seadanya lalu
+     berhenti, dan sisa ruang jatuh ke kolom nama produk yang boleh
+     membungkus - jadi tabel menyusut dari kolom yang paling tahan disempitkan,
+     bukan dari yang paling tidak boleh. */
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; table-layout: auto; }
   thead { display: table-header-group; }
   tr { break-inside: avoid; page-break-inside: avoid; }
   th, td {
     border: 1px solid #ccc; padding: 4px 6px;
     white-space: normal !important;
   }
-  /* Isi sel boleh dipenggal di tengah kata - nama produk bisa sangat panjang
-     dan di atas kertas tidak ada gulir mendatar, jadi apa pun yang keluar
-     halaman hilang selamanya. */
-  td { overflow-wrap: anywhere; }
-  /* Judul kolom TIDAK dipenggal: "PLATFORM" yang patah jadi "PLATFOR M"
-     membuat tabel terbaca berantakan. Lebih baik pindah baris utuh. */
+  /* HANYA kolom teks panjang yang boleh dipenggal di tengah kata - nama
+     produk bisa sangat panjang, dan di atas kertas tidak ada gulir mendatar
+     sehingga apa pun yang keluar halaman hilang selamanya. */
+  td.trunc { max-width: none !important; overflow-wrap: anywhere; }
+
+  /* Angka tidak pernah dipenggal maupun dibungkus. "926.845.547" yang patah
+     jadi "926.845.54" dan "7" bukan lagi angka yang bisa dibaca - lebih baik
+     kolomnya melebar dan nama produk yang mengalah. */
+  td.num, th.num { white-space: nowrap !important; overflow-wrap: normal; word-break: keep-all; }
+
+  /* Judul kolom pindah baris di spasinya, tidak dipenggal: "PLATFORM" yang
+     patah jadi "PLATFOR M" membuat tabel terbaca berantakan. */
   th { overflow-wrap: normal; word-break: keep-all; hyphens: none; }
 
-  /* Nama produk boleh memakan tempat lebih, angka cukup sempit. */
-  td.trunc, th:nth-child(2) { max-width: none !important; width: 18%; }
-  td.num, th.num { width: auto; }
-
-  /* Tabel yang sangat lebar dikecilkan hurufnya agar tetap muat utuh. */
-  table.lebar { font-size: 8pt; }
-  table.lebar th, table.lebar td { padding: 2px 3px; }
-  table.lebar th { font-size: 7.5pt; line-height: 1.15; }
+  /* Tabel yang sangat lebar dikecilkan hurufnya agar tetap muat utuh.
+     Angkanya tidak boleh dibungkus, jadi lebar tabel ditentukan oleh angka
+     terpanjang - satu-satunya cara menyempitkannya tanpa merusak keterbacaan
+     angka adalah mengecilkan hurufnya. Pada A4 mendatar 15 kolom baru muat di
+     ukuran ini; kertas Legal/F4 memberi kelegaan lebih. */
+  table.lebar { font-size: 7pt; }
+  table.lebar th, table.lebar td { padding: 2px 1px; }
+  table.lebar th { font-size: 6.5pt; line-height: 1.15; }
+  /* Kartu yang memuat tabel selebar ini tidak boleh ikut memakan lebar
+     kertas; sisi kirinya sudah dibatasi margin halaman. */
+  .card:has(table.lebar) { padding: 3mm; }
 
   /* Warna status tetap terbaca saat dicetak hitam-putih. */
   .neg { color: #a02020 !important; }

@@ -144,7 +144,7 @@ render_head('Laba & Biaya', 'pnl');
         // langsung. Urutannya lebar lalu tinggi - dibalik supaya mendatar.
         '330mm 215mm'      => 'F4/Folio mendatar',
         'A3 landscape'     => 'A3 mendatar',
-        'A4 portrait'      => 'A4 tegak',
+
       ];
       ?>
       <label style="font-size:12px;color:var(--muted,#667)">Kertas
