@@ -525,9 +525,12 @@ final class Importer
         $n = (int) Db::q(
             "UPDATE settlements s
                 JOIN orders o ON o.platform = s.platform AND o.order_id = s.order_id
-                SET s.ord_date = o.order_date, s.ord_status = o.status_norm
+                SET s.ord_date = o.order_date, s.ord_status = o.status_norm,
+                    s.ord_ada_produk = (o.items_subtotal_before > 0)
               WHERE s.platform = ?
-                AND ((s.ord_date <=> o.order_date) = 0 OR (s.ord_status <=> o.status_norm) = 0)",
+                AND ((s.ord_date <=> o.order_date) = 0
+                     OR (s.ord_status <=> o.status_norm) = 0
+                     OR (s.ord_ada_produk <=> (o.items_subtotal_before > 0)) = 0)",
             [$platform]
         )->rowCount();
 
@@ -537,9 +540,12 @@ final class Importer
         $n += (int) Db::q(
             "UPDATE settlement_fees f
                 JOIN settlements s ON s.id = f.settlement_id
-                SET f.ord_date = s.ord_date, f.ord_status = s.ord_status
+                SET f.ord_date = s.ord_date, f.ord_status = s.ord_status,
+                    f.ord_ada_produk = s.ord_ada_produk
               WHERE f.platform = ?
-                AND ((f.ord_date <=> s.ord_date) = 0 OR (f.ord_status <=> s.ord_status) = 0)",
+                AND ((f.ord_date <=> s.ord_date) = 0
+                     OR (f.ord_status <=> s.ord_status) = 0
+                     OR (f.ord_ada_produk <=> s.ord_ada_produk) = 0)",
             [$platform]
         )->rowCount();
 

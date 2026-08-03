@@ -188,21 +188,14 @@ if ($section === 'produk') {
 
     <?php $tanpaProduk = Reports::biayaTanpaProduk($from, $to, $platform); ?>
     <?php if ($tanpaProduk['baris'] > 0): ?>
-      <div class="alert info" style="margin-top:12px">
-        <b>Kenapa total di sini beda dengan ringkasan di atas.</b>
-        <?= num($tanpaProduk['baris']) ?> baris settlement dibebankan pada pesanan yang
-        <b>tidak punya nilai produk</b> &mdash; biasanya biaya yang muncul setelah pesanan batal,
-        atau potongan yang berdiri sendiri. Tidak ada produk yang bisa menanggungnya, jadi
-        angkanya tidak bisa dipecah ke baris mana pun di tabel ini.
-        <table style="margin-top:8px;width:auto">
-          <tr><td>Biaya platform di tabel ini</td>
-              <td class="num neg"><?= rp($pt['biaya']) ?></td></tr>
-          <tr><td>Biaya tanpa nilai produk</td>
-              <td class="num neg"><?= rp($tanpaProduk['biaya']) ?></td></tr>
-          <tr><td><b>Jumlah &mdash; sama dengan ringkasan</b></td>
-              <td class="num neg"><b><?= rp($pt['biaya'] + $tanpaProduk['biaya']) ?></b></td></tr>
-        </table>
-      </div>
+      <p class="help" style="margin-top:10px">
+        Angka di tabel ini <b>sama dengan ringkasan</b> di atas.
+        Di luar keduanya masih ada <?= num($tanpaProduk['baris']) ?> baris settlement berupa
+        biaya <?= rp($tanpaProduk['biaya'], true) ?> yang dibebankan pada pesanan
+        <b>tanpa nilai produk</b> &mdash; biasanya biaya yang muncul setelah pesanan batal.
+        Tidak ada produk yang bisa menanggungnya, jadi tidak ikut di mana pun;
+        laporan platform akan lebih besar sebesar itu.
+      </p>
     <?php endif; ?>
 
     <?php if (count($produk) > $batasLayar): ?>

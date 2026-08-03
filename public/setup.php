@@ -155,6 +155,10 @@ function runMigrations(PDO $pdo, string $dbName): array
          "ALTER TABLE settlement_fees ADD COLUMN ord_date DATE NULL AFTER settlement_date"],
         ['settlement_fees', 'ord_status',
          "ALTER TABLE settlement_fees ADD COLUMN ord_status VARCHAR(12) NULL AFTER ord_date"],
+        ['settlements', 'ord_ada_produk',
+         "ALTER TABLE settlements ADD COLUMN ord_ada_produk TINYINT(1) NULL AFTER ord_status"],
+        ['settlement_fees', 'ord_ada_produk',
+         "ALTER TABLE settlement_fees ADD COLUMN ord_ada_produk TINYINT(1) NULL AFTER ord_status"],
     ];
 
     $done = [];
@@ -215,8 +219,11 @@ function runMigrations(PDO $pdo, string $dbName): array
             $n = $pdo->exec(
                 'UPDATE settlements s
                     JOIN orders o ON o.platform = s.platform AND o.order_id = s.order_id
-                     SET s.ord_date = o.order_date, s.ord_status = o.status_norm
-                   WHERE (s.ord_date <=> o.order_date) = 0 OR (s.ord_status <=> o.status_norm) = 0'
+                     SET s.ord_date = o.order_date, s.ord_status = o.status_norm,
+                         s.ord_ada_produk = (o.items_subtotal_before > 0)
+                   WHERE (s.ord_date <=> o.order_date) = 0
+                      OR (s.ord_status <=> o.status_norm) = 0
+                      OR (s.ord_ada_produk <=> (o.items_subtotal_before > 0)) = 0'
             );
             if ((int) $n > 0) {
                 $done[] = "tanggal & status pesanan disalin ke {$n} baris settlement";
@@ -226,8 +233,11 @@ function runMigrations(PDO $pdo, string $dbName): array
                 $nf = $pdo->exec(
                     'UPDATE settlement_fees f
                         JOIN settlements s ON s.id = f.settlement_id
-                         SET f.ord_date = s.ord_date, f.ord_status = s.ord_status
-                       WHERE (f.ord_date <=> s.ord_date) = 0 OR (f.ord_status <=> s.ord_status) = 0'
+                         SET f.ord_date = s.ord_date, f.ord_status = s.ord_status,
+                             f.ord_ada_produk = s.ord_ada_produk
+                       WHERE (f.ord_date <=> s.ord_date) = 0
+                          OR (f.ord_status <=> s.ord_status) = 0
+                          OR (f.ord_ada_produk <=> s.ord_ada_produk) = 0'
                 );
                 if ((int) $nf > 0) {
                     $done[] = "disalin juga ke {$nf} baris rincian biaya";

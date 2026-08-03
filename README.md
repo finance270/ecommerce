@@ -646,6 +646,13 @@ dan `settlement_fees` (kolom `ord_date`, `ord_status`). Salinan itu disegarkan o
 kali berkas diunggah &mdash; berkas pesanan maupun berkas penghasilan &mdash; sehingga urutan
 unggahnya bebas: yang mana pun lebih dulu, pasangannya menyusul saat yang lain masuk.
 
+Ikut tidak dihitung: settlement yang dibebankan pada pesanan **tanpa nilai produk** &mdash;
+misalnya biaya yang muncul setelah pesanan batal. Alokasi ke produk memakai porsi nilai produk
+terhadap nilai pesanan, jadi kalau pesanannya tidak punya nilai produk, pembaginya nol dan tidak
+ada produk yang bisa menanggungnya. Kalau baris itu tetap dimasukkan, ringkasan Laba & Biaya
+tidak akan pernah sama dengan tabel laba per produk. Nilainya tetap disebutkan di halaman itu,
+dan laporan resmi platform memang akan lebih besar sebesar itu.
+
 Konsekuensi yang sengaja ditampilkan terbuka di halaman Laba & Biaya: settlement yang
 **pesanannya belum diunggah** tidak punya tanggal maupun status, jadi tidak ikut dihitung.
 Halaman itu menyebutkan berapa baris dan berapa rupiah yang tersisih karena sebab tersebut,

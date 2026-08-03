@@ -168,11 +168,26 @@ final class Reports
      * kosong sehingga barisnya tidak ikut dihitung. Berapa banyak yang
      * tersisih dilaporkan lewat cakupanLabaRugi().
      */
-    private static function filterPesanan(?string $from, ?string $to, ?string $platform, string $alias = ''): array
-    {
+    private static function filterPesanan(
+        ?string $from,
+        ?string $to,
+        ?string $platform,
+        string $alias = '',
+        bool $hanyaAdaProduk = true
+    ): array {
         [$w, $a] = self::filter('ord_date', $from, $to, $platform, $alias);
         $p = $alias !== '' ? $alias . '.' : '';
-        return [$w . " AND {$p}ord_status = " . Db::conn()->quote(self::STATUS_DIAKUI), $a];
+        $w .= " AND {$p}ord_status = " . Db::conn()->quote(self::STATUS_DIAKUI);
+
+        // Baris yang dibebankan pada pesanan tanpa nilai produk tidak ikut.
+        // Tidak ada produk yang bisa menanggungnya, sehingga kalau ikut,
+        // ringkasan tidak akan pernah sama dengan tabel per produk. Angkanya
+        // tetap dilaporkan lewat cakupanLabaRugi() supaya tidak hilang begitu
+        // saja dari pandangan.
+        if ($hanyaAdaProduk) {
+            $w .= " AND {$p}ord_ada_produk = 1";
+        }
+        return [$w, $a];
     }
 
     /**
@@ -198,7 +213,12 @@ final class Reports
                     COALESCE(SUM(CASE WHEN ord_status IS NULL THEN net_amount END), 0) AS bersih_tanpa_pesanan,
                     SUM(ord_status IS NOT NULL AND ord_status <> {$diakui}) AS tidak_selesai,
                     COALESCE(SUM(CASE WHEN ord_status IS NOT NULL AND ord_status <> {$diakui}
-                                      THEN net_amount END), 0) AS bersih_tidak_selesai
+                                      THEN net_amount END), 0) AS bersih_tidak_selesai,
+                    SUM(ord_status = {$diakui} AND ord_ada_produk = 0) AS tanpa_produk,
+                    COALESCE(SUM(CASE WHEN ord_status = {$diakui} AND ord_ada_produk = 0
+                                      THEN net_amount END), 0) AS bersih_tanpa_produk,
+                    COALESCE(SUM(CASE WHEN ord_status = {$diakui} AND ord_ada_produk = 0
+                                      THEN total_fee END), 0) AS biaya_tanpa_produk
                FROM settlements WHERE {$w}",
             $a
         ) ?? [];
@@ -210,6 +230,9 @@ final class Reports
             'bersih_tanpa_pesanan' => (float) ($row['bersih_tanpa_pesanan'] ?? 0),
             'tidak_selesai'        => (int) ($row['tidak_selesai'] ?? 0),
             'bersih_tidak_selesai' => (float) ($row['bersih_tidak_selesai'] ?? 0),
+            'tanpa_produk'         => (int) ($row['tanpa_produk'] ?? 0),
+            'bersih_tanpa_produk'  => (float) ($row['bersih_tanpa_produk'] ?? 0),
+            'biaya_tanpa_produk'   => (float) ($row['biaya_tanpa_produk'] ?? 0),
         ];
     }
 
@@ -776,16 +799,16 @@ final class Reports
      */
     public static function biayaTanpaProduk(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filterPesanan($from, $to, $platform, 's');
+        // Sengaja TANPA syarat ord_ada_produk: justru baris itulah yang
+        // hendak dihitung di sini.
+        [$w, $a] = self::filterPesanan($from, $to, $platform, 's', false);
         $row = Db::one(
             "SELECT COUNT(*) AS baris,
                     COALESCE(SUM(s.total_fee), 0)      AS biaya,
                     COALESCE(SUM(s.net_amount), 0)     AS bersih,
                     COALESCE(SUM(s.total_potongan), 0) AS potongan
                FROM settlements s
-               LEFT JOIN orders o ON o.platform = s.platform AND o.order_id = s.order_id
-                                 AND o.items_subtotal_before > 0
-              WHERE {$w} AND o.id IS NULL",
+              WHERE {$w} AND s.ord_ada_produk = 0",
             $a
         ) ?? [];
 

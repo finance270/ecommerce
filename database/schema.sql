@@ -229,6 +229,11 @@ CREATE TABLE IF NOT EXISTS settlements (
   -- pesanan maupun berkas penghasilan diunggah, jadi urutan unggahnya bebas.
   ord_date          DATE         NULL,
   ord_status        VARCHAR(12)  NULL,
+  -- Apakah pesanannya punya nilai produk sama sekali. Biaya yang dibebankan
+  -- pada pesanan tanpa nilai produk (mis. biaya setelah pesanan batal) tidak
+  -- bisa dipecah ke produk mana pun, sehingga tidak ikut Laba & Biaya -
+  -- kalau ikut, ringkasannya tidak akan pernah sama dengan tabel per produk.
+  ord_ada_produk    TINYINT(1)   NULL,
 
   gross_amount      DECIMAL(18,2) NOT NULL DEFAULT 0,
   discount_seller   DECIMAL(18,2) NOT NULL DEFAULT 0,
@@ -297,6 +302,7 @@ CREATE TABLE IF NOT EXISTS settlement_fees (
   -- Sama seperti pada tabel settlements: dasar periode Laba & Biaya.
   ord_date       DATE         NULL,
   ord_status     VARCHAR(12)  NULL,
+  ord_ada_produk TINYINT(1)   NULL,
   fee_code       VARCHAR(120) NOT NULL,
   fee_label      VARCHAR(255) NOT NULL,
   fee_category   VARCHAR(24)  NOT NULL DEFAULT 'lainnya',

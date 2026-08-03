@@ -82,7 +82,7 @@ render_head('Laba & Biaya', 'pnl');
 // terbuka supaya penurunan angka tidak disangka kesalahan hitung - sebagian
 // besar biasanya hanya berkas pesanan yang belum diunggah.
 $cakupan = Reports::cakupanLabaRugi($from, $to, $platform);
-$luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'];
+$luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'] + $cakupan['tanpa_produk'];
 ?>
 <?php if ($luar > 0): ?>
   <div class="alert info">
@@ -99,6 +99,15 @@ $luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'];
       <b><?= num($cakupan['tidak_selesai']) ?></b> baris
       (<?= rp($cakupan['bersih_tidak_selesai'], true) ?>) berasal dari pesanan
       <b>batal atau retur</b>, jadi memang tidak diakui sebagai penjualan.
+    <?php endif; ?>
+    <?php if ($cakupan['tanpa_produk'] > 0): ?>
+      <br>
+      <b><?= num($cakupan['tanpa_produk']) ?></b> baris berupa biaya yang dibebankan pada
+      pesanan <b>tanpa nilai produk</b> &mdash; biaya platform
+      <?= rp($cakupan['biaya_tanpa_produk'], true) ?>. Tidak ada produk yang bisa
+      menanggungnya, jadi tidak ikut dihitung di sini agar ringkasan ini sama persis
+      dengan tabel laba per produk. Angka pada laporan platform akan lebih besar
+      sebesar itu.
     <?php endif; ?>
   </div>
 <?php endif; ?>
