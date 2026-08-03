@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /** Titik masuk bersama untuk seluruh halaman. */
 
-foreach (['Config', 'Db', 'Value', 'XlsxReader', 'XlsxWriter', 'Profiles', 'Importer', 'CostImporter', 'Pemasang', 'Pusat', 'Tenant', 'Perm', 'Auth', 'Helpers', 'Tax', 'Reports'] as $class) {
+foreach (['Config', 'Db', 'Value', 'XlsxReader', 'XlsxWriter', 'Profiles', 'Importer', 'CostImporter', 'Pemasang', 'Pusat', 'Tenant', 'Perm', 'Auth', 'Helpers', 'Tax', 'Reports', 'Pembersih'] as $class) {
     require_once __DIR__ . '/' . $class . '.php';
 }
 

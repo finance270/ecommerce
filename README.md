@@ -248,7 +248,7 @@ akan **0**.
 | **Pengembalian** | Refund per bulan, per produk, dan per transaksi &mdash; laporan tersendiri |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
 | **Monitoring** | Periode mana yang datanya belum diperbarui, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
-| **Riwayat Upload** | Catatan setiap berkas yang pernah diproses |
+| **Riwayat Upload** | Catatan setiap berkas yang pernah diproses, dan penghapusan data per bulan (admin) |
 | **Pengguna** | *(admin saja)* Buat akun, atur tab yang boleh dibuka, atur hak atas data gaji, dan ambil **tautan direksi** |
 
 Semua laporan bisa diekspor ke **CSV** (UTF-8 + pemisah `;`, langsung rapi di Excel Indonesia).
