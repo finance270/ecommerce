@@ -297,7 +297,7 @@ Jembatan angkanya selalu berimbang, dan **seluruh pengurang ditampilkan** di hal
 = laba usaha
 ```
 
-HPP dan beban operasional dicocokkan pada **bulan settlement** yang sama, supaya biaya dan
+HPP dan beban operasional dicocokkan pada **bulan pesanan** yang sama, supaya biaya dan
 pendapatannya berada pada periode yang sama.
 
 ### Pengembalian dana (refund)
@@ -635,11 +635,22 @@ yang berhasil dipecah ke produk, supaya Anda tahu kalau angkanya belum mencakup 
 
 Ini penting agar angka tidak salah tafsir:
 
-- **Performa penjualan** memakai **tanggal pesanan** (`orders`).
-- **Akuntansi & keuangan** memakai **tanggal dana dilepaskan** (`settlements`), karena itulah
-  saat kas benar-benar diterima.
+- **Laba & Biaya, laba per produk, dan HPP** memakai **tanggal pesanan**, dan hanya menghitung
+  pesanan berstatus **selesai**. Penjualan diakui saat transaksinya terjadi, bukan saat dananya
+  cair; pesanan batal dan retur tidak diakui meski uangnya sempat bergerak.
+- **Settlement, Pengembalian, dan Rekonsiliasi** tetap memakai **tanggal dana dilepaskan**,
+  karena laporan itu memang tentang pergerakan kas.
 
-Karena itu kedua kelompok laporan dipisah dan tidak dicampur dalam satu angka.
+Agar dasar pertama tidak mahal, tanggal dan status pesanan **disalin** ke tabel `settlements`
+dan `settlement_fees` (kolom `ord_date`, `ord_status`). Salinan itu disegarkan otomatis setiap
+kali berkas diunggah &mdash; berkas pesanan maupun berkas penghasilan &mdash; sehingga urutan
+unggahnya bebas: yang mana pun lebih dulu, pasangannya menyusul saat yang lain masuk.
+
+Konsekuensi yang sengaja ditampilkan terbuka di halaman Laba & Biaya: settlement yang
+**pesanannya belum diunggah** tidak punya tanggal maupun status, jadi tidak ikut dihitung.
+Halaman itu menyebutkan berapa baris dan berapa rupiah yang tersisih karena sebab tersebut,
+terpisah dari yang tersisih karena pesanannya batal/retur &mdash; supaya penurunan angka tidak
+disangka kesalahan hitung, dan supaya jelas berkas periode mana yang perlu diunggah.
 
 ### Hak akses pengguna
 

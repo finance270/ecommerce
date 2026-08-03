@@ -142,6 +142,91 @@ final class Reports
         return [implode(' AND ', $w), $args];
     }
 
+    /** Status pesanan yang diakui sebagai penjualan pada Laba & Biaya. */
+    public const STATUS_DIAKUI = 'selesai';
+
+    /**
+     * Penyaring periode untuk Laporan Laba & Biaya dan turunannya.
+     *
+     * Dasarnya TANGGAL PESANAN, bukan tanggal dana dilepaskan, dan hanya
+     * pesanan berstatus selesai yang dihitung. Keduanya dibaca dari salinan
+     * di tabel settlement (ord_date, ord_status) yang disegarkan tiap impor.
+     *
+     * Syarat statusnya sekaligus menyaring baris yang pesanannya belum
+     * dikenal: selama berkas pesanannya belum diunggah, salinan itu masih
+     * kosong sehingga barisnya tidak ikut dihitung. Berapa banyak yang
+     * tersisih dilaporkan lewat cakupanLabaRugi().
+     */
+    private static function filterPesanan(?string $from, ?string $to, ?string $platform, string $alias = ''): array
+    {
+        [$w, $a] = self::filter('ord_date', $from, $to, $platform, $alias);
+        $p = $alias !== '' ? $alias . '.' : '';
+        return [$w . " AND {$p}ord_status = " . Db::conn()->quote(self::STATUS_DIAKUI), $a];
+    }
+
+    /**
+     * Berapa bagian settlement yang ikut terhitung pada Laba & Biaya.
+     *
+     * Dua sebab sebuah baris tersisih: pesanannya belum diunggah sehingga
+     * statusnya belum diketahui, atau pesanannya memang tidak selesai
+     * (batal/retur). Keduanya dibedakan supaya jelas mana yang perlu
+     * ditindaklanjuti dengan mengunggah berkas.
+     *
+     * Rentangnya memakai tanggal settlement, karena inilah pertanyaannya:
+     * dari seluruh uang yang bergerak pada periode itu, berapa yang masuk
+     * laporan.
+     */
+    public static function cakupanLabaRugi(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        $diakui = Db::conn()->quote(self::STATUS_DIAKUI);
+        $row = Db::one(
+            "SELECT COUNT(*) AS baris,
+                    COALESCE(SUM(net_amount), 0) AS bersih,
+                    SUM(ord_status IS NULL) AS tanpa_pesanan,
+                    COALESCE(SUM(CASE WHEN ord_status IS NULL THEN net_amount END), 0) AS bersih_tanpa_pesanan,
+                    SUM(ord_status IS NOT NULL AND ord_status <> {$diakui}) AS tidak_selesai,
+                    COALESCE(SUM(CASE WHEN ord_status IS NOT NULL AND ord_status <> {$diakui}
+                                      THEN net_amount END), 0) AS bersih_tidak_selesai
+               FROM settlements WHERE {$w}",
+            $a
+        ) ?? [];
+
+        return [
+            'baris'                => (int) ($row['baris'] ?? 0),
+            'bersih'               => (float) ($row['bersih'] ?? 0),
+            'tanpa_pesanan'        => (int) ($row['tanpa_pesanan'] ?? 0),
+            'bersih_tanpa_pesanan' => (float) ($row['bersih_tanpa_pesanan'] ?? 0),
+            'tidak_selesai'        => (int) ($row['tidak_selesai'] ?? 0),
+            'bersih_tidak_selesai' => (float) ($row['bersih_tidak_selesai'] ?? 0),
+        ];
+    }
+
+    /**
+     * Penyaring satu bulan pada tabel settlement, dasar tanggal pesanan.
+     *
+     * Dipakai halaman HPP dan rincian produk supaya angkanya sebanding dengan
+     * Laba & Biaya. Bulannya dijadikan rentang tanggal, bukan DATE_FORMAT,
+     * supaya index (platform, ord_status, ord_date) tetap terpakai - dengan
+     * fungsi di sisi kiri, MariaDB memindai seluruh tabel.
+     */
+    private static function filterBulanPesanan(?string $ym, ?string $platform): array
+    {
+        $w = 'ord_status = ' . Db::conn()->quote(self::STATUS_DIAKUI);
+        $a = [];
+        if ($ym !== null) {
+            $awal = $ym . '-01';
+            $w .= ' AND ord_date >= ? AND ord_date <= ?';
+            $a[] = $awal;
+            $a[] = date('Y-m-t', strtotime($awal) ?: time());
+        }
+        if ($platform !== null) {
+            $w .= ' AND platform = ?';
+            $a[] = $platform;
+        }
+        return [$w, $a];
+    }
+
     /** Rentang tanggal data yang tersedia. */
     public static function dataRange(): array
     {
@@ -235,7 +320,7 @@ final class Reports
     /** Ringkasan laba kotor berdasarkan settlement. */
     public static function pnl(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
         $head = Db::one(
             "SELECT
                 COUNT(*) AS trx,
@@ -264,7 +349,7 @@ final class Reports
      */
     public static function categoryTotals(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
 
         $select = [];
         foreach (Profiles::FEE_CATEGORIES as $cat) {
@@ -306,7 +391,7 @@ final class Reports
      */
     public static function bridge(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
         $rows = Db::all(
             "SELECT platform,
                     COALESCE(SUM(" . self::KOTOR . "),0) AS kotor,
@@ -357,7 +442,7 @@ final class Reports
      */
     public static function feeDetail(?string $from, ?string $to, ?string $platform, bool $includeRincian = false): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
         $extra = $includeRincian ? '' : " AND fee_category <> 'rincian'";
 
         $rows = Db::all(
@@ -387,9 +472,9 @@ final class Reports
     /** Arus settlement per bulan - untuk jurnal / rekap bulanan. */
     public static function monthlySettlement(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
         $rows = Db::all(
-            "SELECT DATE_FORMAT(settlement_date,'%Y-%m') AS bulan, platform,
+            "SELECT DATE_FORMAT(ord_date,'%Y-%m') AS bulan, platform,
                     COUNT(*) AS trx,
                     COALESCE(SUM(" . self::KOTOR . "),0) AS pendapatan_kotor,
                     COALESCE(SUM(total_potongan),0)    AS potongan,
@@ -397,7 +482,7 @@ final class Reports
                     COALESCE(SUM(adjustment_amount),0) AS penyesuaian,
                     COALESCE(SUM(net_amount),0)        AS dana_diterima
              FROM settlements
-             WHERE {$w} AND settlement_date IS NOT NULL
+             WHERE {$w} AND ord_date IS NOT NULL
              GROUP BY bulan, platform ORDER BY bulan DESC, platform",
             $a
         );
@@ -607,7 +692,7 @@ final class Reports
      */
     public static function productNet(?string $from, ?string $to, ?string $platform, int $limit = 100, string $sort = 'bersih'): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
         $order = match ($sort) {
             'kotor'  => 'kotor',
             'qty'    => 'qty',
@@ -662,7 +747,7 @@ final class Reports
     {
         // Satu kali baca settlements dengan LEFT JOIN ke orders; tidak perlu
         // sub-query beragregasi supaya tetap ringan saat data menumpuk.
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform, 's');
+        [$w, $a] = self::filterPesanan($from, $to, $platform, 's');
         $row = Db::one(
             "SELECT COUNT(DISTINCT s.platform, s.order_id) AS total_pesanan,
                     COALESCE(SUM(s.net_amount),0)          AS total_bersih,
@@ -690,7 +775,7 @@ final class Reports
     // -----------------------------------------------------------------
 
     /**
-     * HPP dicocokkan memakai BULAN SETTLEMENT, sama seperti seluruh halaman
+     * HPP dicocokkan memakai BULAN PESANAN, sama seperti seluruh halaman
      * Laba & Biaya, supaya biaya dan pendapatannya berada pada periode yang
      * sama. Dipakai bersama oleh laporan laba per produk dan pemantauan HPP.
      */
@@ -700,14 +785,21 @@ final class Reports
                     ON pc.cost_key = i.cost_key AND pc.period_ym = st.period_ym";
     }
 
-    /** Sub-query settlement per pesanan + bulan settlement-nya. */
+    /** Sub-query settlement per pesanan + bulan periodenya. */
     private static function settlementPerOrderSql(string $where): string
     {
         // gross_amount di sini sudah bersih dari pengembalian (lihat const
         // KOTOR), sehingga seluruh laporan per produk yang memakai sub-query
         // ini ikut bersih tanpa perlu mengurangkan refund lagi.
+        //
+        // period_ym memakai BULAN PESANAN, sejalan dengan dasar periode
+        // Laba & Biaya. HPP per bulan dicocokkan lewat kolom ini, jadi kalau
+        // dasarnya berbeda, HPP bulan lain yang terpakai dan marjinnya salah.
+        // Untuk baris yang pesanannya belum dikenal, tanggal settlement
+        // dipakai sebagai cadangan supaya laporan lintas periode tetap punya
+        // bulan - baris itu sendiri sudah tersaring oleh syarat statusnya.
         return "SELECT platform, order_id,
-                       DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
+                       DATE_FORMAT(COALESCE(MAX(ord_date), MAX(settlement_date)),'%Y-%m') AS period_ym,
                        SUM(" . self::KOTOR . ") AS gross_amount,
                        SUM(total_potongan)      AS total_potongan,
                        SUM(total_fee)           AS total_fee,
@@ -736,7 +828,7 @@ final class Reports
      */
     public static function productProfit(?string $from, ?string $to, ?string $platform, int $limit = 100, string $sort = 'laba'): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
 
         // Marjin bisa NULL (produk tanpa penjualan bersih positif); baris
         // seperti itu didorong ke belakang, bukan menempati puncak daftar
@@ -807,7 +899,7 @@ final class Reports
     /** Ringkasan HPP untuk seluruh rentang: total HPP + qty yang belum punya HPP. */
     public static function costSummary(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterPesanan($from, $to, $platform);
         $sub = self::settlementPerOrderSql($w);
         $join = self::costJoinSql();
 
@@ -840,12 +932,7 @@ final class Reports
      */
     public static function missingCosts(?string $ym, int $limit = 300): array
     {
-        $w = 'settlement_date IS NOT NULL';
-        $a = [];
-        if ($ym !== null) {
-            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
-            $a[] = $ym;
-        }
+        [$w, $a] = self::filterBulanPesanan($ym, null);
         $sub = self::settlementPerOrderSql($w);
         $join = self::costJoinSql();
 
@@ -873,7 +960,7 @@ final class Reports
     /** Ringkasan kelengkapan HPP per bulan. */
     public static function costCoverageByMonth(): array
     {
-        $sub = self::settlementPerOrderSql('settlement_date IS NOT NULL');
+        $sub = self::settlementPerOrderSql('ord_status = ' . Db::conn()->quote(self::STATUS_DIAKUI));
         $join = self::costJoinSql();
 
         return Db::all(
@@ -923,16 +1010,7 @@ final class Reports
         float $maxPct = self::MARJIN_MAX,
         float $badPct = 100.0
     ): array {
-        $w = 'settlement_date IS NOT NULL';
-        $a = [];
-        if ($ym !== null) {
-            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
-            $a[] = $ym;
-        }
-        if ($platform !== null) {
-            $w .= ' AND platform = ?';
-            $a[] = $platform;
-        }
+        [$w, $a] = self::filterBulanPesanan($ym, $platform);
         $sub = self::settlementPerOrderSql($w);
         $join = self::costJoinSql();
 
@@ -1041,17 +1119,7 @@ final class Reports
     /** Filter settlement untuk laporan per produk. */
     private static function productWhere(?string $ym, ?string $platform): array
     {
-        $w = 'settlement_date IS NOT NULL';
-        $a = [];
-        if ($ym !== null) {
-            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
-            $a[] = $ym;
-        }
-        if ($platform !== null) {
-            $w .= ' AND platform = ?';
-            $a[] = $platform;
-        }
-        return [$w, $a];
+        return self::filterBulanPesanan($ym, $platform);
     }
 
     /**
@@ -1587,12 +1655,7 @@ final class Reports
     /** Rincian settlement yang belum ada data pesanannya, per bulan. */
     public static function unmatchedSettlements(?string $ym, int $limit = 300): array
     {
-        $w = 'settlement_date IS NOT NULL';
-        $a = [];
-        if ($ym !== null) {
-            $w .= " AND DATE_FORMAT(settlement_date,'%Y-%m') = ?";
-            $a[] = $ym;
-        }
+        [$w, $a] = self::filterBulanPesanan($ym, null);
         return Db::all(
             "SELECT st.period_ym, st.platform, st.order_id, st.net_amount
              FROM (
@@ -1786,7 +1849,8 @@ final class Reports
                  ORDER BY qty DESC"
             );
         }
-        $sub = self::settlementPerOrderSql("settlement_date IS NOT NULL AND DATE_FORMAT(settlement_date,'%Y-%m') = ?");
+        [$wBulan, $aBulan] = self::filterBulanPesanan($ym, null);
+        $sub = self::settlementPerOrderSql($wBulan);
         return Db::all(
             "SELECT COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
                     COALESCE(i.variation,'') AS variasi,
@@ -1799,7 +1863,7 @@ final class Reports
              STRAIGHT_JOIN order_items i ON i.order_pk = o.id
              GROUP BY produk, variasi
              ORDER BY qty DESC",
-            [$ym]
+            $aBulan
         );
     }
 

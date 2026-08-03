@@ -65,12 +65,39 @@ render_head('Laba & Biaya', 'pnl');
 ?>
 <h1>Laporan Laba &amp; Biaya</h1>
 <p class="sub">
-  Berbasis <b>tanggal dana dilepaskan</b> (settlement), bukan tanggal pesanan &mdash; inilah dasar
-  pencatatan akuntansi karena mencerminkan kas yang benar-benar diterima.
-  HPP dan beban operasional juga dicocokkan pada bulan settlement yang sama.
+  Berbasis <b>tanggal pesanan</b>, dan hanya pesanan berstatus <b>selesai</b> yang dihitung &mdash;
+  penjualan diakui pada saat transaksinya terjadi, bukan saat dananya cair.
+  Pesanan batal dan retur tidak ikut, meski uangnya sempat bergerak.
+  HPP dan beban operasional dicocokkan pada bulan pesanan yang sama.
 </p>
 
 <?php render_filter($from, $to, $platform); ?>
+
+<?php
+// Uang yang bergerak pada periode ini tetapi tidak masuk laporan. Ditampilkan
+// terbuka supaya penurunan angka tidak disangka kesalahan hitung - sebagian
+// besar biasanya hanya berkas pesanan yang belum diunggah.
+$cakupan = Reports::cakupanLabaRugi($from, $to, $platform);
+$luar = $cakupan['tanpa_pesanan'] + $cakupan['tidak_selesai'];
+?>
+<?php if ($luar > 0): ?>
+  <div class="alert info">
+    <b>Yang tidak masuk laporan ini.</b>
+    Dari <?= num($cakupan['baris']) ?> baris settlement pada periode ini,
+    <?php if ($cakupan['tanpa_pesanan'] > 0): ?>
+      <b><?= num($cakupan['tanpa_pesanan']) ?></b> baris (<?= rp($cakupan['bersih_tanpa_pesanan'], true) ?>)
+      belum diketahui pesanannya &mdash; berkas <i>Semua Pesanan</i>/<i>Order</i> periode terkait
+      belum diunggah, jadi tanggal dan statusnya belum ada.
+      <?= tabLink('monitoring', 'monitoring.php', 'Lihat periode mana &rarr;') ?>
+    <?php endif; ?>
+    <?php if ($cakupan['tidak_selesai'] > 0): ?>
+      <?= $cakupan['tanpa_pesanan'] > 0 ? '<br>' : '' ?>
+      <b><?= num($cakupan['tidak_selesai']) ?></b> baris
+      (<?= rp($cakupan['bersih_tidak_selesai'], true) ?>) berasal dari pesanan
+      <b>batal atau retur</b>, jadi memang tidak diakui sebagai penjualan.
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <?php if ($costSum['qty_tanpa_hpp'] > 0): ?>
   <div class="alert warn">

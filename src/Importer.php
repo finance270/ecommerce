@@ -72,6 +72,12 @@ final class Importer
             throw $e;
         }
 
+        // Tanggal & status pesanan disalin ke tabel settlement setelah impor,
+        // apa pun jenis berkasnya. Dengan begitu urutan unggah tidak jadi soal:
+        // berkas penghasilan boleh lebih dulu, salinannya menyusul saat berkas
+        // pesanannya masuk - dan sebaliknya.
+        $this->syncOrderRef($info['platform']);
+
         $totals = $this->totals();
         $status = $totals['skipped'] > 0 && $totals['read'] === $totals['skipped'] ? 'partial' : 'success';
         $this->finishUpload($status, null, (int) ((microtime(true) - $started) * 1000));
@@ -501,6 +507,43 @@ final class Importer
             $st = $pdo->prepare($sql);
             $st->execute(array_merge([$platform], $chunk, [$platform]));
         }
+    }
+
+    /**
+     * Menyalin tanggal & status pesanan ke tabel settlement.
+     *
+     * Dipakai Laporan Laba & Biaya yang berbasis TANGGAL PESANAN dan hanya
+     * menghitung pesanan selesai. Disalin, bukan di-join saat melapor, karena
+     * tabel settlement inilah yang paling sering dijumlah - menempelkannya ke
+     * tabel orders pada setiap agregasi membuat seluruh halaman melambat.
+     *
+     * Yang disegarkan hanya baris yang salinannya belum sesuai, sehingga
+     * menjalankan ini berulang kali tidak menambah beban.
+     */
+    public function syncOrderRef(string $platform): int
+    {
+        $n = (int) Db::q(
+            "UPDATE settlements s
+                JOIN orders o ON o.platform = s.platform AND o.order_id = s.order_id
+                SET s.ord_date = o.order_date, s.ord_status = o.status_norm
+              WHERE s.platform = ?
+                AND ((s.ord_date <=> o.order_date) = 0 OR (s.ord_status <=> o.status_norm) = 0)",
+            [$platform]
+        )->rowCount();
+
+        // Rincian biayanya menyimpan salinan yang sama supaya laporan komponen
+        // biaya tidak perlu menempel ke tabel settlement - tabel ini yang
+        // paling banyak barisnya.
+        $n += (int) Db::q(
+            "UPDATE settlement_fees f
+                JOIN settlements s ON s.id = f.settlement_id
+                SET f.ord_date = s.ord_date, f.ord_status = s.ord_status
+              WHERE f.platform = ?
+                AND ((f.ord_date <=> s.ord_date) = 0 OR (f.ord_status <=> s.ord_status) = 0)",
+            [$platform]
+        )->rowCount();
+
+        return $n;
     }
 
     // =================================================================

@@ -147,6 +147,14 @@ function runMigrations(PDO $pdo, string $dbName): array
          "ALTER TABLE users ADD COLUMN permissions TEXT NULL AFTER role"],
         ['users', 'salary_access',
          "ALTER TABLE users ADD COLUMN salary_access ENUM('all','only','none') NOT NULL DEFAULT 'all' AFTER permissions"],
+        ['settlements', 'ord_date',
+         "ALTER TABLE settlements ADD COLUMN ord_date DATE NULL AFTER settlement_date"],
+        ['settlements', 'ord_status',
+         "ALTER TABLE settlements ADD COLUMN ord_status VARCHAR(12) NULL AFTER ord_date"],
+        ['settlement_fees', 'ord_date',
+         "ALTER TABLE settlement_fees ADD COLUMN ord_date DATE NULL AFTER settlement_date"],
+        ['settlement_fees', 'ord_status',
+         "ALTER TABLE settlement_fees ADD COLUMN ord_status VARCHAR(12) NULL AFTER ord_date"],
     ];
 
     $done = [];
@@ -198,6 +206,33 @@ function runMigrations(PDO $pdo, string $dbName): array
         $diperbaiki = perbaikiStatusNorm($pdo);
         if ($diperbaiki > 0) {
             $done[] = "status {$diperbaiki} pesanan dihitung ulang";
+        }
+
+        // Isi salinan tanggal & status pesanan di tabel settlement. Ini yang
+        // dipakai Laba & Biaya sebagai dasar periode; tanpa diisi, laporannya
+        // akan tampak kosong pada pemasangan yang datanya sudah ada.
+        if (columnExists($pdo, $dbName, 'settlements', 'ord_date')) {
+            $n = $pdo->exec(
+                'UPDATE settlements s
+                    JOIN orders o ON o.platform = s.platform AND o.order_id = s.order_id
+                     SET s.ord_date = o.order_date, s.ord_status = o.status_norm
+                   WHERE (s.ord_date <=> o.order_date) = 0 OR (s.ord_status <=> o.status_norm) = 0'
+            );
+            if ((int) $n > 0) {
+                $done[] = "tanggal & status pesanan disalin ke {$n} baris settlement";
+            }
+
+            if (columnExists($pdo, $dbName, 'settlement_fees', 'ord_date')) {
+                $nf = $pdo->exec(
+                    'UPDATE settlement_fees f
+                        JOIN settlements s ON s.id = f.settlement_id
+                         SET f.ord_date = s.ord_date, f.ord_status = s.ord_status
+                       WHERE (f.ord_date <=> s.ord_date) = 0 OR (f.ord_status <=> s.ord_status) = 0'
+                );
+                if ((int) $nf > 0) {
+                    $done[] = "disalin juga ke {$nf} baris rincian biaya";
+                }
+            }
         }
     }
 

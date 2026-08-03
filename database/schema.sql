@@ -221,6 +221,15 @@ CREATE TABLE IF NOT EXISTS settlements (
   settlement_time   DATETIME     NULL,
   settlement_date   DATE         NULL,
 
+  -- Salinan tanggal dan status dari pesanan yang bersangkutan.
+  -- Laporan Laba & Biaya memakai TANGGAL PESANAN sebagai dasar periode dan
+  -- hanya menghitung pesanan berstatus selesai. Tanpa salinan ini, setiap
+  -- agregasi harus menempel ke tabel orders lebih dulu - padahal tabel ini
+  -- yang paling sering dijumlah. Diisi ulang otomatis setiap kali berkas
+  -- pesanan maupun berkas penghasilan diunggah, jadi urutan unggahnya bebas.
+  ord_date          DATE         NULL,
+  ord_status        VARCHAR(12)  NULL,
+
   gross_amount      DECIMAL(18,2) NOT NULL DEFAULT 0,
   discount_seller   DECIMAL(18,2) NOT NULL DEFAULT 0,
   -- Jumlah seluruh komponen berkategori 'potongan' (diskon & voucher yang
@@ -268,7 +277,11 @@ CREATE TABLE IF NOT EXISTS settlements (
   KEY idx_settlements_alloc (platform, order_id, settlement_date, gross_amount,
                              total_potongan, refund_amount, total_fee, net_amount),
   KEY idx_settlements_type (platform, trx_type),
-  KEY idx_settlements_upload (upload_id)
+  KEY idx_settlements_upload (upload_id),
+  -- Dasar periode Laba & Biaya: tanggal pesanan + status selesai.
+  KEY idx_settlements_ord (platform, ord_status, ord_date),
+  KEY idx_settlements_ord_alloc (platform, ord_status, ord_date, order_id,
+                                 gross_amount, total_potongan, total_fee, net_amount)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
@@ -281,6 +294,9 @@ CREATE TABLE IF NOT EXISTS settlement_fees (
   platform       VARCHAR(16)  NOT NULL,
   order_id       VARCHAR(64)  NOT NULL,
   settlement_date DATE        NULL,
+  -- Sama seperti pada tabel settlements: dasar periode Laba & Biaya.
+  ord_date       DATE         NULL,
+  ord_status     VARCHAR(12)  NULL,
   fee_code       VARCHAR(120) NOT NULL,
   fee_label      VARCHAR(255) NOT NULL,
   fee_category   VARCHAR(24)  NOT NULL DEFAULT 'lainnya',
@@ -292,7 +308,9 @@ CREATE TABLE IF NOT EXISTS settlement_fees (
   KEY idx_fee_date (settlement_date, platform),
   -- Dipakai rincian biaya pada simulasi harga, yang menelusuri biaya
   -- dari sisi pesanan sebuah produk.
-  KEY idx_fee_order (platform, order_id)
+  KEY idx_fee_order (platform, order_id),
+  -- Rincian komponen biaya pada Laba & Biaya, yang berbasis tanggal pesanan.
+  KEY idx_fee_ord (platform, ord_status, ord_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
