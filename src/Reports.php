@@ -411,6 +411,119 @@ final class Reports
     }
 
     /**
+     * Tanggal selesainya pesanan, dipilih dari kolom yang memang terisi.
+     *
+     * Shopee mengisi "Waktu Pesanan Selesai" (completed_at), Tokopedia
+     * mengisi "Delivered Time" (delivered_at) - tidak ada satu kolom yang
+     * terisi di kedua platform. Dari tanggal inilah hitungan pencairan
+     * dimulai, bukan dari tanggal pesanan dibuat.
+     */
+    private const TGL_SELESAI = 'DATE(COALESCE(o.completed_at, o.delivered_at, o.shipped_at, o.order_date))';
+
+    /**
+     * Rentang tanggal settlement yang benar-benar dimiliki tiap platform.
+     *
+     * Dipakai sebagai batas penilaian "dana belum dilepas". Tanpa batas ini,
+     * seluruh pesanan dari periode yang berkas penghasilannya memang belum
+     * pernah diunggah akan tampak seperti dana tertahan - padahal yang belum
+     * ada hanyalah datanya.
+     *
+     * @return array<string,array{awal:string,akhir:string}>
+     */
+    public static function cakupanSettlement(): array
+    {
+        $out = [];
+        foreach (Db::all(
+            'SELECT platform, MIN(settlement_date) awal, MAX(settlement_date) akhir
+               FROM settlements WHERE settlement_date IS NOT NULL GROUP BY platform'
+        ) as $r) {
+            $out[(string) $r['platform']] = [
+                'awal'  => (string) $r['awal'],
+                'akhir' => (string) $r['akhir'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Pesanan selesai yang dananya belum dilepas, dikelompokkan menurut umur.
+     *
+     * Platform mencairkan dana beberapa hari setelah pesanan selesai, jadi
+     * pesanan yang baru selesai kemarin memang belum boleh dianggap
+     * bermasalah. Yang perlu dilihat adalah yang sudah melewati tenggat itu.
+     *
+     * @return array<int,array{platform:string,kelompok:string,urut:int,jumlah:int,nilai:float}>
+     */
+    public static function danaBelumDilepas(int $batasHari = 7, ?string $platform = null): array
+    {
+        $tgl = self::TGL_SELESAI;
+        $a = [$batasHari, $batasHari * 2];
+        $w = '';
+        if ($platform !== null && $platform !== '') {
+            $w = ' AND o.platform = ?';
+            $a[] = $platform;
+        }
+
+        return Db::all(
+            "SELECT o.platform,
+                    CASE WHEN {$tgl} > c.akhir THEN 3
+                         WHEN DATEDIFF(CURDATE(), {$tgl}) <= ? THEN 0
+                         WHEN DATEDIFF(CURDATE(), {$tgl}) <= ? THEN 1
+                         ELSE 2 END AS urut,
+                    COUNT(*) AS jumlah,
+                    COALESCE(SUM(o.items_subtotal_after), 0) AS nilai,
+                    MIN({$tgl}) AS paling_lama
+               FROM orders o
+               LEFT JOIN settlements s ON s.platform = o.platform AND s.order_id = o.order_id
+               JOIN (SELECT platform, MIN(settlement_date) awal, MAX(settlement_date) akhir
+                       FROM settlements WHERE settlement_date IS NOT NULL GROUP BY platform) c
+                 ON c.platform = o.platform
+              WHERE o.status_norm = 'selesai' AND s.id IS NULL
+                AND {$tgl} >= c.awal {$w}
+              GROUP BY o.platform, urut
+              ORDER BY o.platform, urut",
+            $a
+        );
+    }
+
+    /**
+     * Daftar pesanannya, yang paling lama menunggu lebih dulu.
+     *
+     * @return array<int,array>
+     */
+    public static function danaBelumDilepasRinci(
+        int $batasHari = 7,
+        ?string $platform = null,
+        int $limit = 300
+    ): array {
+        $tgl = self::TGL_SELESAI;
+        $a = [$batasHari];
+        $w = '';
+        if ($platform !== null && $platform !== '') {
+            $w = ' AND o.platform = ?';
+            $a[] = $platform;
+        }
+
+        return Db::all(
+            "SELECT o.platform, o.order_id, o.order_date, o.status_raw,
+                    {$tgl} AS tgl_selesai,
+                    DATEDIFF(CURDATE(), {$tgl}) AS umur,
+                    o.items_subtotal_after AS nilai
+               FROM orders o
+               LEFT JOIN settlements s ON s.platform = o.platform AND s.order_id = o.order_id
+               JOIN (SELECT platform, MIN(settlement_date) awal, MAX(settlement_date) akhir
+                       FROM settlements WHERE settlement_date IS NOT NULL GROUP BY platform) c
+                 ON c.platform = o.platform
+              WHERE o.status_norm = 'selesai' AND s.id IS NULL
+                AND {$tgl} BETWEEN c.awal AND c.akhir
+                AND DATEDIFF(CURDATE(), {$tgl}) > ? {$w}
+              ORDER BY umur DESC, o.order_id
+              LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /**
      * Rekonsiliasi: pesanan selesai yang belum ada catatan settlement-nya.
      * Ini adalah "piutang" ke platform - uang yang belum cair.
      */

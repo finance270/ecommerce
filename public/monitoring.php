@@ -15,6 +15,23 @@ $status    = Reports::uploadStatus();
 $bulan     = Reports::dataMonitor();
 $unmatched = Reports::unmatchedSettlements($ym, 300);
 
+// Tenggat pencairan. Platform mencairkan dana beberapa hari setelah pesanan
+// selesai, jadi pesanan yang baru selesai belum pantas disebut tertahan.
+$hari = (int) (q('hari') ?? 7);
+if (!in_array($hari, [3, 5, 7, 10, 14], true)) {
+    $hari = 7;
+}
+$belumCair  = Reports::danaBelumDilepas($hari);
+$belumRinci = Reports::danaBelumDilepasRinci($hari, null, 200);
+$cakupan    = Reports::cakupanSettlement();
+
+$kelompok = [
+    0 => ['Masih dalam masa pencairan', 'ok',   'Selesai ' . $hari . ' hari terakhir - wajar belum cair.'],
+    1 => ['Lewat tenggat',              'warn', 'Sudah ' . ($hari + 1) . '-' . ($hari * 2) . ' hari, mulai perlu dipantau.'],
+    2 => ['Jauh lewat tenggat',         'bad',  'Lebih dari ' . ($hari * 2) . ' hari. Tanyakan ke platform.'],
+    3 => ['Belum bisa dinilai',         'info', 'Berkas penghasilannya belum diunggah sampai tanggal itu.'],
+];
+
 /** Nama berkas yang perlu diunggah untuk tiap jenis data. */
 $jenisBerkas = [
     'tokopedia|order'      => 'Tokopedia &mdash; Semua Pesanan',
@@ -36,6 +53,95 @@ render_head('Monitoring Data', 'monitoring');
   Melihat periode mana yang datanya belum diperbarui, supaya laporan tidak dibaca sebagai
   angka final padahal berkasnya belum lengkap.
 </p>
+
+<div class="card">
+  <h2>Dana belum dilepas</h2>
+  <p class="help" style="margin-top:-4px">
+    Dilihat dari sisi <b>pesanan</b>: mana yang sudah selesai tetapi belum ada catatan
+    pencairannya. Umurnya dihitung sejak <b>pesanan selesai</b> (Shopee: Waktu Pesanan
+    Selesai, Tokopedia: Delivered Time), bukan sejak pesanan dibuat &mdash; dari situlah
+    hitungan pencairan platform dimulai.
+  </p>
+
+  <form method="get" class="filters" style="margin-bottom:12px">
+    <?php if ($ym !== null): ?><input type="hidden" name="ym" value="<?= e($ym) ?>"><?php endif; ?>
+    <div class="field">
+      <label>Tenggat pencairan</label>
+      <select name="hari" onchange="this.form.submit()">
+        <?php foreach ([3, 5, 7, 10, 14] as $h): ?>
+          <option value="<?= $h ?>" <?= $h === $hari ? 'selected' : '' ?>><?= $h ?> hari</option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <noscript><button class="btn ghost sm" type="submit">Terapkan</button></noscript>
+  </form>
+
+  <?php if ($cakupan !== []): ?>
+    <p class="help" style="margin-top:-4px">
+      Penilaian hanya dilakukan pada rentang yang berkas penghasilannya sudah ada:
+      <?php $bagian = [];
+      foreach ($cakupan as $p => $c) {
+          $bagian[] = '<b>' . e(ucfirst($p)) . '</b> ' . e(date('d/m/Y', strtotime($c['awal'])))
+              . ' &ndash; ' . e(date('d/m/Y', strtotime($c['akhir'])));
+      }
+      echo implode(' &middot; ', $bagian); ?>.
+      Di luar itu belum bisa dinilai, karena yang belum ada adalah datanya &mdash; bukan dananya.
+    </p>
+  <?php endif; ?>
+
+  <?php if ($belumCair === []): ?>
+    <div class="alert ok">Semua pesanan selesai sudah ada catatan pencairannya.</div>
+  <?php else: ?>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Platform</th><th>Kelompok</th><th class="num">Pesanan</th>
+          <th class="num">Nilai pesanan</th><th>Selesai paling lama</th><th>Artinya</th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ($belumCair as $b): [$label, $tone, $arti] = $kelompok[(int) $b['urut']]; ?>
+          <tr>
+            <td><?= platformBadge((string) $b['platform']) ?></td>
+            <td><span class="badge <?= $tone ?>"><?= e($label) ?></span></td>
+            <td class="num"><?= num((int) $b['jumlah']) ?></td>
+            <td class="num"><?= rp((float) $b['nilai']) ?></td>
+            <td class="nowrap muted"><?= e(date('d/m/Y', strtotime((string) $b['paling_lama']))) ?></td>
+            <td class="muted" style="font-size:12px"><?= e($arti) ?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($belumRinci !== []): ?>
+    <h3 style="margin-top:18px">Pesanan yang paling lama menunggu</h3>
+    <p class="help" style="margin-top:-4px">
+      Sudah lewat <?= $hari ?> hari sejak selesai dan masih belum ada pencairannya.
+      <?= count($belumRinci) >= 200 ? 'Ditampilkan 200 teratas.' : '' ?>
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Platform</th><th>No. Pesanan</th><th>Tanggal selesai</th>
+          <th class="num">Menunggu</th><th class="num">Nilai</th><th>Status di platform</th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ($belumRinci as $r): ?>
+          <tr>
+            <td><?= platformBadge((string) $r['platform']) ?></td>
+            <td class="nowrap"><a href="<?= e('orders.php?q=' . urlencode((string) $r['order_id'])) ?>"><?= e($r['order_id']) ?></a></td>
+            <td class="nowrap muted"><?= e(date('d/m/Y', strtotime((string) $r['tgl_selesai']))) ?></td>
+            <td class="num <?= (int) $r['umur'] > $hari * 2 ? 'bad' : '' ?>"><?= num((int) $r['umur']) ?> hari</td>
+            <td class="num"><?= rp((float) $r['nilai']) ?></td>
+            <td class="trunc muted" style="font-size:12px" title="<?= e((string) $r['status_raw']) ?>"><?= e($r['status_raw'] ?? '-') ?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+</div>
 
 <div class="card">
   <h2>Berkas terakhir diunggah</h2>

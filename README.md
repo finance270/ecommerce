@@ -350,6 +350,16 @@ titik ribuan seperti `17.500.000`.
 
 Menu **Monitoring** menjawab pertanyaan "periode mana yang belum saya update":
 
+- **Dana belum dilepas** — dari sisi *pesanan*: mana yang sudah selesai tetapi belum ada
+  catatan pencairannya. Umurnya dihitung sejak **pesanan selesai** (Shopee: *Waktu Pesanan
+  Selesai*, Tokopedia: *Delivered Time*), bukan sejak pesanan dibuat, karena dari situlah
+  hitungan pencairan platform mulai berjalan. Tenggatnya bisa diatur (3&ndash;14 hari,
+  default 7) dan hasilnya dikelompokkan: masih dalam masa pencairan, lewat tenggat, jauh
+  lewat tenggat. Disertai daftar pesanan yang paling lama menunggu.
+  > Penilaian dibatasi pada rentang tanggal yang berkas penghasilannya memang sudah
+  > diunggah. Pesanan di luar rentang itu masuk kelompok **belum bisa dinilai** &mdash;
+  > yang belum ada adalah datanya, bukan dananya. Tanpa pembatasan ini satu bulan yang
+  > berkas Income-nya belum diunggah akan tampak seperti miliaran rupiah tertahan.
 - **Berkas terakhir diunggah** untuk tiap jenis (4 berkas platform + HPP + beban), lengkap
   dengan umurnya. Lewat seminggu ditandai, lewat dua minggu ditandai lebih keras.
 - **Kelengkapan per bulan**: jumlah pesanan, jumlah settlement, persentase *alokasi produk*,
