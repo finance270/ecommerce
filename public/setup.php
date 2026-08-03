@@ -100,6 +100,42 @@ function backfillCostKeys(PDO $pdo): int
     return count($combos);
 }
 
+/**
+ * Menghitung ulang status_norm dari status_raw untuk baris yang sudah ada.
+ *
+ * Dipakai setelah aturan penormalan status diperbaiki: tanpa ini, pesanan
+ * yang terlanjur salah golongan hanya akan benar bila berkasnya diunggah
+ * ulang - dan pemiliknya belum tentu tahu berkas bulan mana saja.
+ *
+ * Dikerjakan per nilai status yang berbeda (jumlahnya sedikit), bukan per
+ * baris, sehingga satu bulan cukup beberapa UPDATE.
+ *
+ * @return int jumlah baris pesanan yang berubah
+ */
+function perbaikiStatusNorm(PDO $pdo): int
+{
+    $berubah = 0;
+    $daftar = $pdo->query('SELECT DISTINCT status_raw FROM orders WHERE status_raw IS NOT NULL')
+        ->fetchAll(PDO::FETCH_COLUMN);
+
+    $st = $pdo->prepare('UPDATE orders SET status_norm = ? WHERE status_raw = ? AND status_norm <> ?');
+    foreach ($daftar as $raw) {
+        $norm = Profiles::normStatus((string) $raw);
+        $st->execute([$norm, $raw, $norm]);
+        $berubah += $st->rowCount();
+    }
+
+    if ($berubah > 0 && $pdo->query("SHOW TABLES LIKE 'order_items'")->fetchColumn() !== false) {
+        // Baris produk mewarisi status pesanannya, jadi ikut disamakan.
+        $pdo->exec(
+            'UPDATE order_items i JOIN orders o ON o.id = i.order_pk
+                SET i.status_norm = o.status_norm
+              WHERE i.status_norm <> o.status_norm'
+        );
+    }
+    return $berubah;
+}
+
 function runMigrations(PDO $pdo, string $dbName): array
 {
     $wanted = [
@@ -135,6 +171,33 @@ function runMigrations(PDO $pdo, string $dbName): array
         if ($exists === 0) {
             $pdo->exec($sql);
             $done[] = "{$table}.{$column}";
+        }
+    }
+
+    // Kolom yang perlu dilebarkan, bukan ditambahkan. Shopee mulai menulis
+    // kalimat penuh di kolom status ("Pesanan diterima, namun Pembeli masih
+    // dapat mengajukan pengembalian hingga ...") yang panjangnya 86 karakter,
+    // sehingga unggahan gagal di tengah jalan pada kolom selebar 64.
+    foreach ([['orders', 'status_raw', 255]] as [$table, $column, $lebar]) {
+        $kini = $pdo->query(
+            "SELECT character_maximum_length FROM information_schema.columns
+              WHERE table_schema = " . $pdo->quote($dbName) . "
+                AND table_name = " . $pdo->quote($table) . "
+                AND column_name = " . $pdo->quote($column)
+        )->fetchColumn();
+        if ($kini !== false && (int) $kini < $lebar) {
+            $pdo->exec("ALTER TABLE `{$table}` MODIFY `{$column}` VARCHAR({$lebar}) NULL");
+            $done[] = "{$table}.{$column} dilebarkan jadi {$lebar}";
+        }
+    }
+
+    // Hitung ulang status pesanan lama. Kalimat Shopee di atas memuat kata
+    // "pengembalian", sehingga pesanan yang sebenarnya selesai sempat
+    // tercatat sebagai retur dan hilang dari angka penjualan.
+    if ($pdo->query("SHOW TABLES LIKE 'orders'")->fetchColumn() !== false) {
+        $diperbaiki = perbaikiStatusNorm($pdo);
+        if ($diperbaiki > 0) {
+            $done[] = "status {$diperbaiki} pesanan dihitung ulang";
         }
     }
 

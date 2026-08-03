@@ -72,7 +72,10 @@ CREATE TABLE IF NOT EXISTS orders (
   platform                 VARCHAR(16)  NOT NULL,
   order_id                 VARCHAR(64)  NOT NULL,
   channel                  VARCHAR(32)  NULL,
-  status_raw               VARCHAR(64)  NULL,
+  -- Panjang: Shopee menulis kalimat penuh di kolom status, misalnya
+  -- "Pesanan diterima, namun Pembeli masih dapat mengajukan pengembalian
+  -- hingga 2026-08-04." (86 karakter), bukan sekadar "Selesai".
+  status_raw               VARCHAR(255) NULL,
   status_norm              ENUM('selesai','batal','proses','retur','lainnya') NOT NULL DEFAULT 'lainnya',
   substatus                VARCHAR(64)  NULL,
   order_type               VARCHAR(32)  NULL,

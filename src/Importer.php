@@ -331,12 +331,34 @@ final class Importer
             $row['channel'] = 'Shopee';
         }
 
+        // Platform sesekali memperpanjang teksnya tanpa pemberitahuan - Shopee
+        // pernah mengubah "Selesai" menjadi satu kalimat penuh. Dipotong di
+        // sini supaya satu nilai kepanjangan tidak menggagalkan seluruh
+        // berkas; penggolongan statusnya sendiri sudah dihitung di atas dari
+        // teks yang utuh.
+        foreach (self::PANJANG_TEKS as $f => $maks) {
+            if (isset($row[$f]) && is_string($row[$f]) && mb_strlen($row[$f]) > $maks) {
+                $row[$f] = mb_substr($row[$f], 0, $maks);
+            }
+        }
+
         $row['row_hash'] = sha1(json_encode($row, JSON_UNESCAPED_UNICODE) ?: '');
         $row['upload_id'] = $this->uploadId;
         // Baris aslinya disimpan terpisah di tabel order_raw supaya tabel
         // orders tetap ramping saat laporan menjumlah ratusan ribu baris.
         return $row;
     }
+
+    /** Batas panjang kolom teks pada tabel orders. */
+    private const PANJANG_TEKS = [
+        'status_raw'    => 255,
+        'substatus'     => 64,
+        'order_type'    => 32,
+        'return_status' => 64,
+        'cancel_by'     => 64,
+        'cancel_reason' => 255,
+        'channel'       => 32,
+    ];
 
     private const ORDER_FIELDS = [
         'channel', 'status_raw', 'substatus', 'order_type', 'return_status', 'cancel_by', 'cancel_reason',

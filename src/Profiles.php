@@ -510,10 +510,29 @@ final class Profiles
         if (str_contains($s, 'batal') || str_contains($s, 'cancel')) {
             return 'batal';
         }
+
+        // Shopee kini menulis kalimat, bukan status:
+        //   "Pesanan diterima, namun Pembeli masih dapat mengajukan
+        //    pengembalian hingga 2026-08-04."
+        // Itu pesanan yang SUDAH diterima; pengembaliannya baru sebatas
+        // kemungkinan yang belum tentu terjadi. Klausa itu dibuang lebih dulu
+        // supaya kata "pengembalian" di dalamnya tidak membuat pesanan yang
+        // sebenarnya selesai ikut terhitung sebagai retur - pada satu berkas
+        // sebulan, itu sepertiga dari seluruh pesanan.
+        if (str_contains($s, 'mengajukan pengembalian')
+            || str_contains($s, 'request a return')
+            || str_contains($s, 'request return')) {
+            $s = trim((string) preg_replace('/[,;]?\s*(namun|tetapi|tapi|but|however)\b.*$/u', '', $s));
+        }
+
+        // Urutannya penting: "pengembalian diterima" harus tetap retur, jadi
+        // pemeriksaan retur didahulukan atas kata "diterima".
         if (str_contains($s, 'pengembalian') || str_contains($s, 'retur') || str_contains($s, 'refund')) {
             return 'retur';
         }
-        if (str_contains($s, 'selesai') || str_contains($s, 'complete')) {
+        if (str_contains($s, 'selesai') || str_contains($s, 'complete')
+            || str_contains($s, 'diterima') || str_contains($s, 'delivered')
+            || str_contains($s, 'received')) {
             return 'selesai';
         }
         return 'proses';
