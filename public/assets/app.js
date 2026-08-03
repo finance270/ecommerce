@@ -107,6 +107,7 @@
         .then(function (html) {
           el.innerHTML = html;
           drawAll();
+          isiKartuProduk();
           // Beri tahu pengukur menu/tabel supaya header tabel baru ikut menempel.
           document.dispatchEvent(new Event('bagianDimuat'));
         })
@@ -115,6 +116,26 @@
             '). <a href="' + url + '">Coba buka langsung</a>.</p>';
         });
     });
+  }
+
+  /* Kartu "Produk rugi" di baris ringkasan.
+
+     Angkanya berasal dari tabel laba per produk yang dimuat belakangan -
+     menghitungnya lagi di sini berarti mengulang agregasi termahal di halaman
+     ini hanya untuk satu kartu. */
+  function isiKartuProduk() {
+    var data = document.getElementById('dataProduk');
+    var kartu = document.getElementById('kpiProduk');
+    if (!data || !kartu) return;
+
+    var rugi = parseInt(data.dataset.rugi, 10) || 0;
+    var unik = parseInt(data.dataset.unik, 10) || 0;
+    kartu.className = 'kpi ' + (rugi > 0 ? 'bad' : 'ok');
+    kartu.querySelector('.value').className = 'value';
+    kartu.querySelector('.value').textContent = data.dataset.persen + '%';
+    kartu.querySelector('.hint').innerHTML =
+      '<b>' + rugi + '</b> dari ' + unik + ' produk unik rugi' +
+      (rugi > 0 ? '<br>total kerugian ' + data.dataset.nilai : '');
   }
 
   /* Ukuran kertas untuk hasil cetak.

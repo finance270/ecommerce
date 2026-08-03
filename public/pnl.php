@@ -126,6 +126,16 @@ render_head('Laba & Biaya', 'pnl');
           : number_format($c['marjin_usaha'], 1, ',', '.') . '% dari penjualan bersih' ?>
     </div>
   </div>
+  <?php
+  // Angkanya diisi setelah tabel laba per produk selesai dimuat: hitungannya
+  // sudah ada di sana, jadi tidak perlu mengulang agregasi yang berat hanya
+  // untuk kartu ini. Lihat app.js -> isiKartuProduk().
+  ?>
+  <div class="kpi" id="kpiProduk">
+    <div class="label">Produk rugi</div>
+    <div class="value muted" style="font-size:16px">menghitung&hellip;</div>
+    <div class="hint">menunggu tabel laba per produk</div>
+  </div>
 </div>
 
 <div class="card">

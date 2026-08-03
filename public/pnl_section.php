@@ -36,7 +36,30 @@ if ($section === 'produk') {
     // memuat ulang halaman dengan pengaturan lain.
     $batasLayar = 100;
     $produk = Reports::productProfit($from, $to, $platform, 2000, (string) $prodSort);
+
+    // Ringkasan untung/rugi per PRODUK UNIK, untuk kartu di bagian atas
+    // halaman. Dihitung dari baris yang sudah ada di tangan, bukan lewat
+    // agregasi baru - itu perhitungan termahal di halaman ini.
+    //
+    // Satuannya nama produk, bukan baris: satu produk yang dijual di dua
+    // platform bisa untung di satu dan rugi di lainnya, dan yang menentukan
+    // ia rugi atau tidak adalah hasil akhirnya digabung.
+    $labaPerNama = [];
+    foreach ($produk as $p) {
+        $nama = (string) $p['produk'];
+        $labaPerNama[$nama] = ($labaPerNama[$nama] ?? 0.0) + (float) $p['laba'];
+    }
+    $produkUnik  = count($labaPerNama);
+    $yangRugi    = array_filter($labaPerNama, static fn(float $v): bool => $v < 0);
+    $jumlahRugi  = count($yangRugi);
+    $nilaiRugi   = array_sum($yangRugi);
+    $persenRugi  = $produkUnik > 0 ? $jumlahRugi / $produkUnik * 100 : 0.0;
     ?>
+    <div id="dataProduk" hidden
+         data-unik="<?= $produkUnik ?>"
+         data-rugi="<?= $jumlahRugi ?>"
+         data-persen="<?= e(number_format($persenRugi, 1, ',', '.')) ?>"
+         data-nilai="<?= e(rp(abs($nilaiRugi), true)) ?>"></div>
 
     <form method="get" class="filters" style="margin-bottom:14px">
       <?php foreach (['from' => $from, 'to' => $to, 'platform' => $platform] as $k => $v): ?>
