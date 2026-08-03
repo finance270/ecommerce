@@ -717,62 +717,88 @@ final class Reports
                 GROUP BY platform, order_id";
     }
 
-    /** Laba per produk: alokasi settlement dikurangi HPP. */
+    /**
+     * Laba per produk: alokasi settlement dikurangi pajak, lalu dikurangi HPP.
+     *
+     * Rantai nilainya sengaja sama persis dengan Reports::rantaiLaba() dan
+     * halaman Simulasi Harga:
+     *
+     *     setelah diskon  = kotor + potongan            (potongan bernilai minus)
+     *     PPN             = setelah diskon x 11%
+     *     PPh e-commerce  = setelah diskon x 0,5%
+     *     penjualan bersih= dana diterima - PPN - PPh
+     *     laba            = penjualan bersih - HPP
+     *
+     * Ditulis sebagai potongan SQL bernama supaya rumus yang panjang ini
+     * hanya ada di satu tempat - MariaDB tidak mengizinkan alias SELECT
+     * dipakai ulang di baris SELECT lain, jadi tanpa ini rumusnya harus
+     * disalin berkali-kali dan gampang menyimpang satu sama lain.
+     */
     public static function productProfit(?string $from, ?string $to, ?string $platform, int $limit = 100, string $sort = 'laba'): array
     {
         [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+
+        // Marjin bisa NULL (produk tanpa penjualan bersih positif); baris
+        // seperti itu didorong ke belakang, bukan menempati puncak daftar
+        // "marjin terburuk" hanya karena nilainya kosong.
         $order = match ($sort) {
-            'kotor'  => 'kotor',
-            'qty'    => 'qty',
-            'bersih' => 'bersih',
-            'marjin' => 'marjin_laba',
-            default  => 'laba',
+            'kotor'      => 'kotor DESC',
+            'kotor_asc'  => 'kotor ASC',
+            'qty'        => 'qty DESC',
+            'qty_asc'    => 'qty ASC',
+            'bersih'     => 'bersih DESC',
+            'bersih_asc' => 'bersih ASC',
+            'marjin'     => 'marjin_laba IS NULL, marjin_laba DESC',
+            'marjin_asc' => 'marjin_laba IS NULL, marjin_laba ASC',
+            'laba_asc'   => 'laba ASC',
+            default      => 'laba DESC',
         };
         $sub = self::settlementPerOrderSql($w);
         $join = self::costJoinSql();
-        // Porsi PPN + pajak e-commerce terhadap pendapatan setelah diskon.
-        $tarifPajak = (Tax::PPN_PERSEN + Tax::PPH_PERSEN) / 100;
 
+        $porsi     = 'i.subtotal_before_disc / o.items_subtotal_before';
+        $kotor     = "SUM(st.gross_amount * {$porsi})";
+        $potongan  = "SUM(st.total_potongan * {$porsi})";
+        $biaya     = "SUM(st.total_fee * {$porsi})";
+        $dana      = "SUM(st.net_amount * {$porsi})";
+        $hpp       = 'SUM(i.qty * COALESCE(pc.cost_per_unit, 0))';
+        $setelah   = "({$kotor} + {$potongan})";
+        $ppn       = "({$setelah} * " . (Tax::PPN_PERSEN / 100) . ')';
+        $pph       = "({$setelah} * " . (Tax::PPH_PERSEN / 100) . ')';
+        $penjualan = "({$dana} - {$ppn} - {$pph})";
+        $laba      = "({$penjualan} - {$hpp})";
+
+        // Hasil pengelompokan dibungkus sekali lagi supaya pengurutan boleh
+        // memakai nama kolomnya di dalam ekspresi - MariaDB menolak alias yang
+        // berisi fungsi agregat dipakai begitu (mis. "marjin_laba IS NULL").
+        // Jumlah barisnya sudah sedikit di titik ini, jadi tidak membebani.
         return Db::all(
-            "SELECT i.platform,
-                    COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
-                    COUNT(DISTINCT i.order_id) AS pesanan,
-                    SUM(i.qty)                 AS qty,
-                    SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
-                    SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
-                    SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
-                    SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
-                    SUM(i.qty * COALESCE(pc.cost_per_unit, 0))          AS hpp,
-                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END)  AS qty_tanpa_hpp,
-                    -- Laba SETELAH pajak: dana diterima dikurangi PPN + pajak
-                    -- e-commerce, baru dikurangi HPP.
-                    SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
-                        - SUM((st.gross_amount + st.total_potongan)
-                              * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak}
-                        - SUM(i.qty * COALESCE(pc.cost_per_unit, 0))    AS laba,
-                    -- Penyebutnya PENJUALAN BERSIH, yaitu dana diterima dikurangi
-                    -- PPN dan pajak e-commerce. Keduanya dihitung dari pendapatan
-                    -- setelah dikurang diskon - urutan yang sama dengan
-                    -- Reports::rantaiLaba() dan halaman simulasi harga.
-                    CASE WHEN SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
-                              - SUM((st.gross_amount + st.total_potongan)
-                                    * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak} > 0
-                         THEN (SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
-                               - SUM((st.gross_amount + st.total_potongan)
-                                     * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak}
-                               - SUM(i.qty * COALESCE(pc.cost_per_unit, 0)))
-                              / (SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before)
-                                 - SUM((st.gross_amount + st.total_potongan)
-                                       * i.subtotal_before_disc / o.items_subtotal_before) * {$tarifPajak}) * 100
-                         ELSE NULL END AS marjin_laba
-             FROM ({$sub}) st
-             STRAIGHT_JOIN orders o
-                 ON o.platform = st.platform AND o.order_id = st.order_id
-                AND o.items_subtotal_before > 0
-             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
-             {$join}
-             GROUP BY i.platform, produk
-             ORDER BY {$order} DESC
+            "SELECT * FROM (
+                SELECT i.platform,
+                       COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                       COUNT(DISTINCT i.order_id) AS pesanan,
+                       SUM(i.qty)                 AS qty,
+                       {$kotor}     AS kotor,
+                       {$potongan}  AS potongan,
+                       {$biaya}     AS biaya,
+                       {$dana}      AS bersih,
+                       -{$ppn}      AS ppn,
+                       -{$pph}      AS pph,
+                       {$penjualan} AS penjualan,
+                       {$hpp}       AS hpp,
+                       SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END) AS qty_tanpa_hpp,
+                       {$laba}      AS laba,
+                       CASE WHEN {$penjualan} > 0 THEN {$laba} / {$penjualan} * 100
+                            ELSE NULL END AS marjin_laba
+                  FROM ({$sub}) st
+                  STRAIGHT_JOIN orders o
+                      ON o.platform = st.platform AND o.order_id = st.order_id
+                     AND o.items_subtotal_before > 0
+                  STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+                  {$join}
+                 GROUP BY i.platform, produk
+             ) p
+             ORDER BY {$order}
              LIMIT {$limit}",
             $a
         );

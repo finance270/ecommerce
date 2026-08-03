@@ -117,6 +117,20 @@
     });
   }
 
+  /* Tombol "Tampilkan semua" pada tabel yang diringkas.
+     Dipasang sebagai satu pendengar di document, bukan skrip di dalam
+     potongan halamannya: potongan itu disisipkan lewat innerHTML, dan
+     elemen <script> yang masuk lewat innerHTML tidak pernah dijalankan
+     peramban. */
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-lebih]') : null;
+    if (!t) return;
+    var buka = !document.body.classList.contains('lebih-tampil');
+    document.body.classList.toggle('lebih-tampil', buka);
+    t.textContent = buka ? 'Ringkas lagi' : 'Tampilkan semua';
+    document.dispatchEvent(new Event('bagianDimuat'));
+  });
+
   document.addEventListener('DOMContentLoaded', function () {
     drawAll();
     loadLazy();

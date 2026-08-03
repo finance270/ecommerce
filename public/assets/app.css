@@ -235,8 +235,16 @@ code.k { background: #eef1f6; padding: 1px 6px; border-radius: 4px; font-size: 1
  * memakai [hidden], jadi otomatis tidak ikut tercetak - tidak perlu aturan
  * khusus untuk menyamakan hasil cetak dengan tampilannya.
  */
+/* Baris di luar 100 teratas: diringkas di layar supaya tabelnya enak dibaca,
+   tetapi tetap ada di halaman sehingga hasil cetaknya utuh. */
+tr.lebih { display: none; }
+body.lebih-tampil tr.lebih { display: table-row; }
+
 @media print {
   @page { margin: 12mm; }
+
+  /* Di atas kertas laporan harus lengkap, tidak peduli sedang diringkas. */
+  tr.lebih { display: table-row !important; }
 
   /* Elemen yang tidak ada gunanya di atas kertas. */
   .topbar, .filters, .pager, .btn, .no-print, form { display: none !important; }

@@ -31,7 +31,11 @@ $section  = q('section');
 
 if ($section === 'produk') {
     $prodSort = q('psort', 'laba');
-    $produk   = Reports::productProfit($from, $to, $platform, 100, (string) $prodSort);
+    // Seluruh produk diambil, bukan 100 teratas: yang di luar 100 disembunyikan
+    // di layar tetapi tetap ikut tercetak, sehingga PDF-nya utuh tanpa perlu
+    // memuat ulang halaman dengan pengaturan lain.
+    $batasLayar = 100;
+    $produk = Reports::productProfit($from, $to, $platform, 2000, (string) $prodSort);
     $cover    = Reports::productNetCoverage($from, $to, $platform);
     // Berbasis jumlah pesanan, bukan nilai: nilai settlement bisa negatif
     // (pembalikan) sehingga persentase berbasis nilai bisa melewati 100%.
@@ -55,14 +59,32 @@ if ($section === 'produk') {
       <div class="field">
         <label>Urutkan produk</label>
         <select name="psort" onchange="this.form.submit()">
-          <option value="laba"   <?= $prodSort === 'laba'   ? 'selected' : '' ?>>Laba tertinggi</option>
-          <option value="marjin" <?= $prodSort === 'marjin' ? 'selected' : '' ?>>Marjin laba terbaik</option>
-          <option value="bersih" <?= $prodSort === 'bersih' ? 'selected' : '' ?>>Bersih tertinggi</option>
-          <option value="kotor"  <?= $prodSort === 'kotor'  ? 'selected' : '' ?>>Kotor tertinggi</option>
-          <option value="qty"    <?= $prodSort === 'qty'    ? 'selected' : '' ?>>Terjual terbanyak</option>
+          <optgroup label="Terbaik di atas">
+            <option value="laba"   <?= $prodSort === 'laba'   ? 'selected' : '' ?>>Laba tertinggi</option>
+            <option value="marjin" <?= $prodSort === 'marjin' ? 'selected' : '' ?>>Marjin laba terbaik</option>
+            <option value="bersih" <?= $prodSort === 'bersih' ? 'selected' : '' ?>>Bersih tertinggi</option>
+            <option value="kotor"  <?= $prodSort === 'kotor'  ? 'selected' : '' ?>>Kotor tertinggi</option>
+            <option value="qty"    <?= $prodSort === 'qty'    ? 'selected' : '' ?>>Terjual terbanyak</option>
+          </optgroup>
+          <optgroup label="Yang perlu diperiksa di atas">
+            <option value="laba_asc"   <?= $prodSort === 'laba_asc'   ? 'selected' : '' ?>>Laba terendah</option>
+            <option value="marjin_asc" <?= $prodSort === 'marjin_asc' ? 'selected' : '' ?>>Marjin laba terburuk</option>
+            <option value="bersih_asc" <?= $prodSort === 'bersih_asc' ? 'selected' : '' ?>>Bersih terendah</option>
+            <option value="kotor_asc"  <?= $prodSort === 'kotor_asc'  ? 'selected' : '' ?>>Kotor terendah</option>
+            <option value="qty_asc"    <?= $prodSort === 'qty_asc'    ? 'selected' : '' ?>>Terjual tersedikit</option>
+          </optgroup>
         </select>
       </div>
     </form>
+
+    <p class="help" style="margin-top:-4px;margin-bottom:10px">
+      Rantai nilainya sama dengan <a href="simulasi.php" target="_blank" rel="noopener">Simulasi Harga</a>:
+      kotor &minus; diskon &minus; biaya platform = <b>bersih</b> (dana diterima),
+      lalu dikurangi <b>PPN <?= number_format(Tax::PPN_PERSEN, 0, ',', '.') ?>%</b> dan
+      <b>PPh <?= number_format(Tax::PPH_PERSEN, 1, ',', '.') ?>%</b> menjadi <b>penjualan bersih</b>,
+      baru dikurangi HPP. Marjin dihitung dari penjualan bersih.
+      Kedua pajak dihitung dari nilai <i>setelah diskon</i>.
+    </p>
 
     <div class="table-wrap">
       <table>
@@ -71,20 +93,28 @@ if ($section === 'produk') {
           <th class="num">Pesanan</th><th class="num">Qty</th>
           <th class="num">Kotor</th><th class="num">Diskon &amp; voucher</th>
           <th class="num">Biaya platform</th>
-          <th class="num">Bersih</th><th class="num">HPP</th>
+          <th class="num" title="Dana yang diterima dari platform, sebelum pajak">Bersih</th>
+          <th class="num">PPN <?= number_format(Tax::PPN_PERSEN, 0, ',', '.') ?>%</th>
+          <th class="num">PPh <?= number_format(Tax::PPH_PERSEN, 1, ',', '.') ?>%</th>
+          <th class="num" title="Bersih setelah dikurangi PPN dan PPh">Penjualan bersih</th>
+          <th class="num">HPP</th>
           <th class="num">Laba</th><th class="num">Marjin laba</th>
         </tr></thead>
         <tbody>
         <?php
-        $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'biaya' => 0.0,
-               'bersih' => 0.0, 'hpp' => 0.0, 'laba' => 0.0, 'qty' => 0.0];
+        $pt = ['kotor' => 0.0, 'potongan' => 0.0, 'biaya' => 0.0, 'bersih' => 0.0,
+               'ppn' => 0.0, 'pph' => 0.0, 'penjualan' => 0.0,
+               'hpp' => 0.0, 'laba' => 0.0, 'qty' => 0.0];
         foreach ($produk as $i => $p):
             foreach ($pt as $k => $_) {
                 $pt[$k] += (float) $p[$k];
             }
             $m = $p['marjin_laba'] === null ? null : (float) $p['marjin_laba'];
-            $noHpp = (int) $p['qty_tanpa_hpp'] > 0; ?>
-          <tr>
+            $noHpp = (int) $p['qty_tanpa_hpp'] > 0;
+            // Baris di luar 100 teratas disembunyikan di layar, tetapi tetap
+            // ada di halaman sehingga ikut tercetak utuh.
+            $lebih = $i >= $batasLayar; ?>
+          <tr<?= $lebih ? ' class="lebih"' : '' ?>>
             <td class="muted"><?= $i + 1 ?></td>
             <td class="trunc" title="<?= e($p['produk']) ?>"><?= e($p['produk']) ?></td>
             <td><?= platformBadge((string) $p['platform']) ?></td>
@@ -94,6 +124,9 @@ if ($section === 'produk') {
             <td class="num <?= (float) $p['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['potongan']) ?></td>
             <td class="num neg"><?= rp($p['biaya']) ?></td>
             <td class="num"><?= rp($p['bersih']) ?></td>
+            <td class="num neg"><?= rp($p['ppn']) ?></td>
+            <td class="num neg"><?= rp($p['pph']) ?></td>
+            <td class="num"><?= rp($p['penjualan']) ?></td>
             <td class="num <?= $noHpp ? 'warn' : 'neg' ?>" <?= $noHpp ? 'title="Sebagian atau seluruh unit belum punya HPP"' : '' ?>>
               <?= (float) $p['hpp'] == 0.0 && $noHpp ? '<span class="badge warn">belum ada</span>' : rp(-(float) $p['hpp']) ?>
             </td>
@@ -104,7 +137,7 @@ if ($section === 'produk') {
           </tr>
         <?php endforeach; ?>
         <?php if ($produk === []): ?>
-          <tr><td colspan="12" class="muted">
+          <tr><td colspan="15" class="muted">
             Belum bisa dihitung. Perlu berkas pesanan <i>dan</i> berkas laporan penghasilan
             untuk periode yang sama.
           </td></tr>
@@ -112,19 +145,35 @@ if ($section === 'produk') {
         </tbody>
         <?php if ($produk !== []): ?>
         <tfoot><tr>
-          <td colspan="4">Total <?= count($produk) ?> produk teratas</td>
+          <td colspan="4">Total <?= num(count($produk)) ?> produk</td>
           <td class="num"><?= num($pt['qty']) ?></td>
           <td class="num"><?= rp($pt['kotor']) ?></td>
           <td class="num neg"><?= rp($pt['potongan']) ?></td>
           <td class="num neg"><?= rp($pt['biaya']) ?></td>
           <td class="num"><?= rp($pt['bersih']) ?></td>
+          <td class="num neg"><?= rp($pt['ppn']) ?></td>
+          <td class="num neg"><?= rp($pt['pph']) ?></td>
+          <td class="num"><?= rp($pt['penjualan']) ?></td>
           <td class="num neg"><?= rp(-$pt['hpp']) ?></td>
-          <td class="num pos"><?= rp($pt['laba']) ?></td>
-          <td class="num"><?= $pt['bersih'] > 0 ? number_format($pt['laba'] / $pt['bersih'] * 100, 1, ',', '.') . '%' : '-' ?></td>
+          <td class="num <?= $pt['laba'] < 0 ? 'neg' : 'pos' ?>"><?= rp($pt['laba']) ?></td>
+          <td class="num"><?= $pt['penjualan'] > 0
+              ? number_format($pt['laba'] / $pt['penjualan'] * 100, 1, ',', '.') . '%' : '-' ?></td>
         </tr></tfoot>
         <?php endif; ?>
       </table>
     </div>
+
+    <?php if (count($produk) > $batasLayar): ?>
+      <p class="help no-print" style="margin-top:10px">
+        Ditampilkan <?= num($batasLayar) ?> teratas dari <?= num(count($produk)) ?> produk.
+        <button class="btn ghost sm" type="button" data-lebih>Tampilkan semua</button>
+        <br><b>Saat dicetak, seluruh <?= num(count($produk)) ?> produk ikut tercetak</b>
+        meski di layar sedang diringkas.
+      </p>
+    <?php endif; ?>
+    <?php if (count($produk) >= 2000): ?>
+      <p class="help">Dibatasi 2.000 produk. Pakai <b>Ekspor CSV</b> bila produknya lebih banyak.</p>
+    <?php endif; ?>
     <?php
     exit;
 }

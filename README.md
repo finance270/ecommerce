@@ -241,7 +241,7 @@ akan **0**.
 | **Pesanan** | Cari/filter seluruh pesanan, buka detail per pesanan |
 | **Produk** | Produk & varian terlaris, qty terjual, omzet, retur |
 | **Performa** | Rekap mingguan & bulanan + pertumbuhan, metode bayar, kurir, provinsi |
-| **Laba & Biaya** | Ringkasan lengkap dari pendapatan kotor sampai **laba usaha** (biaya platform & beban operasional bisa dibuka rinciannya, bisa dicetak jadi PDF), jembatan angka per platform, rekap bulanan, **laba per produk setelah HPP**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
+| **Laba & Biaya** | Ringkasan lengkap dari pendapatan kotor sampai **laba usaha** (biaya platform & beban operasional bisa dibuka rinciannya, bisa dicetak jadi PDF), jembatan angka per platform, rekap bulanan, **laba per produk setelah pajak dan HPP**, struktur biaya per kategori, rincian tiap komponen biaya, penarikan dana |
 | **HPP** | Impor HPP per produk per bulan + **pemantauan produk yang belum ada HPP** |
 | **Beban** | Impor beban operasional per bulan (gaji, sewa, listrik, packaging, iklan, dll) |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
@@ -310,6 +310,30 @@ Karena itu **pendapatan kotor di seluruh laporan sudah bersih dari refund** — 
 laba rugi, jembatan per platform, rekap bulanan, laporan per produk, rincian produk, halaman
 Settlement, dan semua ekspor CSV. Tidak ada lagi baris "pengembalian dana" sebagai pengurang,
 karena nilainya sudah tidak pernah ikut dihitung sebagai pendapatan.
+
+### Laba bersih per produk
+
+Tabelnya memakai rantai nilai yang **sama persis** dengan halaman Simulasi Harga, sehingga
+angka di laporan dan di simulasi bisa dibandingkan langsung:
+
+```
+kotor − diskon & voucher − biaya platform = bersih (dana diterima)
+bersih − PPN 11% − PPh 0,5%               = penjualan bersih
+penjualan bersih − HPP                    = laba
+marjin laba                               = laba ÷ penjualan bersih
+```
+
+Kedua pajak dihitung dari nilai **setelah diskon**, bukan dari harga terdaftar.
+
+Pengurutannya dibagi dua kelompok: *terbaik di atas* (laba tertinggi, marjin terbaik, bersih
+tertinggi, kotor tertinggi, terjual terbanyak) dan *yang perlu diperiksa di atas* (laba
+terendah, marjin terburuk, bersih terendah, kotor terendah, terjual tersedikit). Produk yang
+marjinnya tidak bisa dihitung didorong ke belakang, supaya daftar "marjin terburuk" tidak
+diisi baris kosong.
+
+Di layar hanya 100 teratas yang ditampilkan agar tabelnya enak dibaca, tetapi **seluruh produk
+tetap ikut tercetak** saat dibuat PDF — tidak perlu mengubah pengaturan apa pun lebih dulu.
+Tombol *Tampilkan semua* membuka sisanya di layar bila diperlukan.
 
 Rinciannya dipindah ke menu **Pengembalian** tersendiri:
 
