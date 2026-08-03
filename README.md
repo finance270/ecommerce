@@ -638,8 +638,15 @@ Ini penting agar angka tidak salah tafsir:
 - **Laba & Biaya, laba per produk, dan HPP** memakai **tanggal pesanan**, dan hanya menghitung
   pesanan berstatus **selesai**. Penjualan diakui saat transaksinya terjadi, bukan saat dananya
   cair; pesanan batal dan retur tidak diakui meski uangnya sempat bergerak.
-- **Settlement, Pengembalian, dan Rekonsiliasi** tetap memakai **tanggal dana dilepaskan**,
-  karena laporan itu memang tentang pergerakan kas.
+  Biaya platform, diskon, dan biaya promosi **melekat pada pesanannya**: walau muncul di
+  laporan pencairan beberapa hari kemudian, keduanya tetap dibukukan pada bulan pesanan itu.
+  Konsekuensinya, **uang masuk dari pesanan periode sebelumnya bukan penjualan periode ini**
+  &mdash; dana yang cair Januari atas pesanan Desember tahun lalu hanyalah kas masuk.
+- **Pengembalian** juga memakai **tanggal pesanan**, supaya periodenya sejalan dengan Laba &
+  Biaya. Bedanya, syarat "hanya selesai" tidak dipakai di sana &mdash; pesanan batal dan retur
+  justru itulah yang dilaporkan.
+- **Settlement dan Rekonsiliasi** tetap memakai **tanggal dana dilepaskan**, karena kedua
+  laporan itu memang tentang pergerakan kas.
 
 Agar dasar pertama tidak mahal, tanggal dan status pesanan **disalin** ke tabel `settlements`
 dan `settlement_fees` (kolom `ord_date`, `ord_status`). Salinan itu disegarkan otomatis setiap

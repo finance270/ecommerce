@@ -209,6 +209,23 @@ final class Reports
         return [$w, $a];
     }
 
+    /**
+     * Penyaring periode berdasarkan TANGGAL PESANAN saja, tanpa syarat status.
+     *
+     * Dipakai laporan Pengembalian. Periodenya harus sejalan dengan Laba &
+     * Biaya - pengembalian melekat pada pesanan yang dikembalikan, bukan pada
+     * hari uangnya bergerak - tetapi syarat "hanya selesai" justru tidak boleh
+     * dipakai di sini, karena yang dilaporkan memang pesanan yang batal dan
+     * diretur.
+     *
+     * Baris yang pesanannya tidak dikenal ikut tersaring dengan sendirinya:
+     * tanpa tanggal pesanan, tidak ada periode yang bisa dipakai.
+     */
+    private static function filterTanggalPesanan(?string $from, ?string $to, ?string $platform, string $alias = ''): array
+    {
+        return self::filter('ord_date', $from, $to, $platform, $alias);
+    }
+
     /** Rentang tanggal data yang tersedia. */
     public static function dataRange(): array
     {
@@ -1468,7 +1485,7 @@ final class Reports
      */
     public static function refundSummary(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterTanggalPesanan($from, $to, $platform);
         $row = Db::one(
             "SELECT COALESCE(-SUM(refund_amount),0)  AS refund,
                     COALESCE(SUM(gross_amount),0)    AS kotor_sebelum,
@@ -1498,14 +1515,14 @@ final class Reports
      */
     public static function refundByMonth(?string $from, ?string $to, ?string $platform): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterTanggalPesanan($from, $to, $platform);
         return Db::all(
-            "SELECT DATE_FORMAT(settlement_date,'%Y-%m') AS bulan, platform,
+            "SELECT DATE_FORMAT(ord_date,'%Y-%m') AS bulan, platform,
                     COALESCE(-SUM(refund_amount),0) AS refund,
                     COALESCE(SUM(gross_amount),0)   AS kotor_sebelum,
                     SUM(refund_amount <> 0)         AS trx_refund
              FROM settlements
-             WHERE {$w} AND settlement_date IS NOT NULL
+             WHERE {$w} AND ord_date IS NOT NULL
              GROUP BY bulan, platform
              HAVING refund <> 0
              ORDER BY bulan DESC, platform",
@@ -1516,7 +1533,7 @@ final class Reports
     /** Produk yang paling sering / paling besar dikembalikan. */
     public static function refundByProduct(?string $from, ?string $to, ?string $platform, int $limit = 100): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterTanggalPesanan($from, $to, $platform);
         // Hanya settlement yang benar-benar ada refund-nya yang ditelusuri,
         // sehingga penelusuran ke baris produk tetap ringan.
         $sub = "SELECT platform, order_id,
@@ -1548,7 +1565,7 @@ final class Reports
     /** Daftar transaksi pengembalian, untuk ditelusuri satu per satu. */
     public static function refundList(?string $from, ?string $to, ?string $platform, int $limit = 200): array
     {
-        [$w, $a] = self::filter('settlement_date', $from, $to, $platform);
+        [$w, $a] = self::filterTanggalPesanan($from, $to, $platform);
         $limit = max(1, min(2000, $limit));
         return Db::all(
             "SELECT platform, order_id, settlement_date, trx_type,

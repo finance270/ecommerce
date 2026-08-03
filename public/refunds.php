@@ -29,9 +29,12 @@ render_head('Pengembalian', 'refunds');
 ?>
 <h1>Pengembalian Dana</h1>
 <p class="sub">
-  Berbasis <b>tanggal dana dilepaskan</b> (settlement). Nilai di halaman ini <b>sudah dipotong</b>
-  dari pendapatan kotor di laporan Laba &amp; Biaya &mdash; barang yang dikembalikan berarti
-  penjualannya tidak jadi, jadi tidak dihitung sebagai omzet lalu dikurangi lagi.
+  Berbasis <b>tanggal pesanan</b>, sama seperti laporan Laba &amp; Biaya &mdash; pengembalian
+  melekat pada pesanan yang dikembalikan, bukan pada hari uangnya bergerak. Bedanya, di sini
+  pesanan <b>batal dan retur ikut ditampilkan</b>, karena justru itulah yang dilaporkan.
+  Nilainya <b>sudah dipotong</b> dari pendapatan kotor di Laba &amp; Biaya: barang yang
+  dikembalikan berarti penjualannya tidak jadi, jadi tidak dihitung sebagai omzet lalu
+  dikurangi lagi.
 </p>
 
 <?php render_filter($from, $to, $platform); ?>

@@ -65,10 +65,16 @@ render_head('Laba & Biaya', 'pnl');
 ?>
 <h1>Laporan Laba &amp; Biaya</h1>
 <p class="sub">
-  Berbasis <b>tanggal pesanan</b>, dan hanya pesanan berstatus <b>selesai</b> yang dihitung &mdash;
-  penjualan diakui pada saat transaksinya terjadi, bukan saat dananya cair.
-  Pesanan batal dan retur tidak ikut, meski uangnya sempat bergerak.
-  HPP dan beban operasional dicocokkan pada bulan pesanan yang sama.
+  Seluruh pengakuannya berbasis <b>tanggal pesanan</b>, dan hanya pesanan berstatus
+  <b>selesai</b> yang dihitung. Penjualan diakui saat transaksinya terjadi, bukan saat
+  dananya cair. Biaya platform, diskon, dan biaya promosi <b>melekat pada pesanannya</b>
+  &mdash; walau muncul di laporan pencairan beberapa hari kemudian, keduanya tetap
+  dibukukan pada bulan pesanan itu. Begitu pula HPP dan beban operasional.
+</p>
+<p class="sub" style="margin-top:-8px">
+  Karena itu <b>uang masuk yang berasal dari pesanan periode sebelumnya bukan penjualan
+  periode ini</b> &mdash; misalnya dana yang cair Januari atas pesanan Desember tahun lalu.
+  Pesanan batal dan retur juga tidak diakui meski uangnya sempat bergerak.
 </p>
 
 <?php render_filter($from, $to, $platform); ?>
