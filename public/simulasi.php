@@ -589,7 +589,7 @@ $c = Reports::rantaiLaba([
     var lain     = harga * awal.lainPct / 100;
     var dana     = setelah - biaya - lain;
     var nPpn     = setelah * ppn / (100 + ppn);
-    var dpp      = (harga - refund) * 100 / (100 + ppn);
+    var dpp      = (harga - refund) - nPpn;
     var nPph     = dpp * pph / 100;
     var jual     = dana - nPpn - nPph;
 
