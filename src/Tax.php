@@ -31,6 +31,18 @@ declare(strict_types=1);
  *
  *   - Tarif 0,5%, dasar pengenaannya peredaran bruto TIDAK TERMASUK PPN dan
  *     PPnBM. Karena itu di aplikasi ini 0,5% dikalikan DPP, bukan harga jual.
+ *     Rumus DJP untuk pengusaha kena pajak:
+ *
+ *         PPh 22 = (harga jual - diskon penjual) / (1 + tarif PPN) x 0,5%
+ *
+ *     dan untuk non-PKP tanpa pembagian itu. Diskon yang ditanggung
+ *     marketplace maupun ongkos kirim tidak mengurangi dasarnya.
+ *
+ *     CATATAN LAPANGAN: pada berkas penghasilan Shopee Agustus 2026, pajak
+ *     yang benar-benar dipungut = 0,5% x harga produk PERSIS, tanpa dibagi
+ *     1,11 - artinya penjualnya diperlakukan sebagai non-PKP. Angka di
+ *     aplikasi ini memakai rumus PKP, jadi akan lebih kecil daripada yang
+ *     dipotong platform bila status PKP-nya berbeda.
  *   - Dipungut saat pembayaran diterima marketplace, bukan disetor sendiri
  *     oleh penjual seperti sebelumnya.
  *   - Bukan pajak baru dan bukan tambahan beban: nilainya diperhitungkan

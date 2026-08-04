@@ -29,6 +29,10 @@ header('Cache-Control: no-store');
 $platform = platformFilter();
 $section  = q('section');
 
+// Ikut pilihan pada halaman induknya, supaya tabel per produk dan ringkasan
+// di atasnya tidak memakai aturan pajak yang berbeda.
+Reports::$pphSemuaPeriode = q('pph') === 'semua';
+
 if ($section === 'produk') {
     $prodSort = q('psort', 'laba');
     // Seluruh produk diambil, bukan 100 teratas: yang di luar 100 disembunyikan

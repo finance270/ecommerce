@@ -9,6 +9,12 @@ $range = Reports::dataRange();
 [$from, $to] = dateRange();
 $platform = platformFilter();
 
+// PPh e-commerce baru dipungut sejak 1 Agustus 2026. Dengan pilihan ini,
+// bulan-bulan sebelumnya ikut dikenakan supaya dampaknya bisa diperkirakan
+// lebih dulu - angkanya perkiraan, bukan pajak yang benar-benar dipotong.
+$pphSemua = q('pph') === 'semua';
+Reports::$pphSemuaPeriode = $pphSemua;
+
 $pnl     = Reports::pnl($from, $to, $platform);
 $ring    = $pnl['ringkasan'];
 $kategori = $pnl['kategori'];
@@ -25,7 +31,8 @@ $prodSort = q('psort', 'bersih');
 // Bagian terberat (alokasi settlement ke tiap produk) diambil lewat permintaan
 // terpisah supaya halaman langsung tampil dan tidak menggantung saat data sudah
 // menumpuk.
-$lazyParams = ['from' => $from, 'to' => $to, 'platform' => $platform];
+$lazyParams = ['from' => $from, 'to' => $to, 'platform' => $platform,
+               'pph' => $pphSemua ? 'semua' : null];
 $lazyProduk = 'pnl_section.php?' . http_build_query(
     array_filter($lazyParams + ['section' => 'produk', 'psort' => $prodSort], static fn($v) => $v !== null && $v !== '')
 );
@@ -79,6 +86,19 @@ render_head('Laba & Biaya', 'pnl');
 
 <?php render_periode_cetak($from, $to, $platform); ?>
 <?php render_filter($from, $to, $platform); ?>
+
+<form method="get" class="no-print" style="margin:-8px 0 16px">
+  <?php foreach (['from' => $from, 'to' => $to, 'platform' => $platform] as $k => $v): ?>
+    <?php if ($v !== null): ?><input type="hidden" name="<?= e($k) ?>" value="<?= e($v) ?>"><?php endif; ?>
+  <?php endforeach; ?>
+  <label style="font-size:13px;display:inline-flex;gap:6px;align-items:center">
+    <input type="checkbox" name="pph" value="semua" onchange="this.form.submit()"
+           <?= $pphSemua ? 'checked' : '' ?>>
+    Terapkan pajak e-commerce <?= num(Tax::PPH_PERSEN, 1) ?>% juga pada bulan sebelum
+    <?= e(shortDate(Tax::PPH_MULAI)) ?>
+    <span class="muted">(perkiraan, bukan pajak yang benar-benar dipotong)</span>
+  </label>
+</form>
 
 <?php if ($costSum['qty_tanpa_hpp'] > 0): ?>
   <div class="alert warn">
@@ -283,7 +303,17 @@ render_head('Laba & Biaya', 'pnl');
           <td class="num neg"><?= rp(-(float) $c['ppn']) ?></td>
           <td class="num neg"><?= $pH((float) $c['ppn']) ?></td>
           <td class="muted" style="font-size:11.5px">
-            <?= num((float) $c['ppn_persen'], 0) ?>% dari pendapatan setelah dikurang diskon
+            terkandung di dalam harga &mdash; harga jual sudah termasuk PPN,
+            jadi dikeluarkan dengan <?= num((float) $c['ppn_persen'], 0) ?>/<?= num(100 + (float) $c['ppn_persen'], 0) ?>
+          </td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Peredaran bruto tanpa PPN (DPP)</td>
+          <td class="num"><?= rp((float) $c['setelah_diskon'] - (float) $c['ppn']) ?></td>
+          <td class="num"><?= $pH((float) $c['setelah_diskon'] - (float) $c['ppn']) ?></td>
+          <td class="muted" style="font-size:11.5px">
+            setelah diskon &minus; PPN &mdash; dasar pengenaan pajak e-commerce
           </td>
           <td></td>
         </tr>
@@ -295,9 +325,12 @@ render_head('Laba & Biaya', 'pnl');
             <?php if ((float) $c['pph'] == 0.0): ?>
               belum berlaku pada periode ini &mdash; dipungut sejak
               <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>
+            <?php elseif ($pphSemua): ?>
+              <?= num(Tax::PPH_PERSEN, 1) ?>% dari DPP &mdash; <b>perkiraan</b>, diterapkan juga
+              pada bulan sebelum <?= e(shortDate(Tax::PPH_MULAI)) ?>
             <?php else: ?>
-              <?= num(Tax::PPH_PERSEN, 1) ?>% dari pendapatan setelah dikurang diskon,
-              hanya untuk pesanan sejak <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>
+              <?= num(Tax::PPH_PERSEN, 1) ?>% dari DPP, hanya untuk pesanan sejak
+              <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>
             <?php endif; ?>
           </td>
           <td></td>

@@ -93,19 +93,28 @@ final class Reports
         $danaDiterima = array_key_exists('bersih', $r)
             ? (float) $r['bersih']
             : $setelahDiskon - $biaya - $lain;
-        $nilaiPpn = $setelahDiskon * $ppn / 100;
+        // Harga jual di etalase SUDAH termasuk PPN, jadi PPN-nya dikeluarkan
+        // dari dalam harga - bukan ditambahkan di atasnya. Dengan tarif 11%,
+        // harga 111.000 memuat PPN 11.000 (bukan 12.210) dan dasar pengenaan
+        // pajaknya 100.000.
+        $nilaiPpn = $setelahDiskon * $ppn / (100 + $ppn);
+        // Dasar pengenaan pajak: peredaran bruto TIDAK termasuk PPN
+        // (PMK 37/2025). Inilah dasar PPh Pasal 22 e-commerce.
+        $dpp = $setelahDiskon - $nilaiPpn;
+
         // Laporan yang periodenya melintasi tanggal berlakunya PPh e-commerce
         // sudah menghitung nominalnya per baris di SQL; nilai itu dipakai apa
         // adanya. Menghitung ulang dengan satu tarif akan mengenakan pajak
         // pada bulan yang sebenarnya belum dipungut.
         $nilaiPph = array_key_exists('pph_nominal', $r)
             ? abs((float) $r['pph_nominal'])
-            : $setelahDiskon * $pph / 100;
+            : $dpp * $pph / 100;
         $penjualan = $danaDiterima - $nilaiPpn - $nilaiPph;
         // Persentase yang ditampilkan mengikuti nominal yang benar-benar
         // dipakai, supaya keterangan tarif tidak bertentangan dengan angkanya.
         if (array_key_exists('pph_nominal', $r)) {
-            $pph = $setelahDiskon > 0 ? $nilaiPph / $setelahDiskon * 100 : 0.0;
+            // Tarif efektif diukur terhadap DPP, sama seperti dasar hitungnya.
+            $pph = $dpp > 0 ? $nilaiPph / $dpp * 100 : 0.0;
         }
 
         $labaKotor = $penjualan - $hpp;
@@ -797,17 +806,33 @@ final class Reports
     }
 
     /**
-     * Potongan SQL untuk PPh e-commerce yang baru berlaku sejak tanggal
-     * tertentu.
+     * Bila true, PPh e-commerce dihitung juga untuk periode sebelum tanggal
+     * berlakunya - dipakai halaman Laba & Biaya untuk memperkirakan dampaknya
+     * pada bulan-bulan yang sudah lewat.
+     */
+    public static bool $pphSemuaPeriode = false;
+
+    /**
+     * Potongan SQL untuk PPh Pasal 22 e-commerce.
+     *
+     * Dasar pengenaannya adalah peredaran bruto TIDAK termasuk PPN
+     * (PMK 37/2025). Karena harga jual di etalase sudah termasuk PPN, PPN-nya
+     * dikeluarkan lebih dulu: dasar = nilai setelah diskon / (1 + tarif PPN).
      *
      * @param string $kolomTanggal kolom tanggal acuan pada baris tersebut
-     * @param string $dasar        ekspresi dasar pengenaan (setelah diskon)
+     * @param string $dasar        nilai setelah diskon, masih termasuk PPN
      */
     private static function pphSql(string $kolomTanggal, string $dasar): string
     {
-        $mulai = Db::conn()->quote(Tax::PPH_MULAI);
         $tarif = Tax::PPH_PERSEN / 100;
-        return "SUM(CASE WHEN {$kolomTanggal} >= {$mulai} THEN ({$dasar}) * {$tarif} ELSE 0 END)";
+        $bagiPpn = 1 + Tax::PPN_PERSEN / 100;
+        $nilai = "({$dasar}) / {$bagiPpn} * {$tarif}";
+
+        if (self::$pphSemuaPeriode) {
+            return "SUM({$nilai})";
+        }
+        $mulai = Db::conn()->quote(Tax::PPH_MULAI);
+        return "SUM(CASE WHEN {$kolomTanggal} >= {$mulai} THEN {$nilai} ELSE 0 END)";
     }
 
     /** Sub-query settlement per pesanan + bulan periodenya. */
@@ -881,7 +906,9 @@ final class Reports
         $dana      = "SUM(st.net_amount * {$porsi})";
         $hpp       = 'SUM(i.qty * COALESCE(pc.cost_per_unit, 0))';
         $setelah   = "({$kotor} + {$potongan})";
-        $ppn       = "({$setelah} * " . (Tax::PPN_PERSEN / 100) . ')';
+        // PPN dikeluarkan dari dalam harga, bukan ditambahkan di atasnya -
+        // harga etalase sudah termasuk PPN. Lihat rantaiLaba().
+        $ppn       = "({$setelah} * " . (Tax::PPN_PERSEN / (100 + Tax::PPN_PERSEN)) . ')';
         // PPh e-commerce baru dipungut sejak tanggal berlakunya, jadi
         // syaratnya per baris - bukan satu tarif untuk seluruh rentang.
         // Laporan yang mencakup Juli dan Agustus sekaligus jadi benar tanpa
