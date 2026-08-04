@@ -157,8 +157,8 @@ $rantai = [
     ['PPN ' . num($c['ppn_persen'], 0) . '%', -$c['ppn'],  true,
      'terkandung di dalam harga &mdash; dikeluarkan dengan '
      . num($c['ppn_persen'], 0) . '/' . num(100 + $c['ppn_persen'], 0)],
-    ['Peredaran bruto tanpa PPN (DPP)', $c['setelah_diskon'] - $c['ppn'], false,
-     'setelah diskon &minus; PPN'],
+    ['Peredaran bruto tanpa PPN (DPP)', $c['dpp'], false,
+     'kotor <b>sebelum diskon</b> &minus; PPN &mdash; diskon tidak mengurangi dasar ini'],
     ['Pajak e-commerce ' . num(Tax::PPH_PERSEN, 1) . '%', -$c['pph'], true,
      (float) $c['pph'] == 0.0
         ? 'belum berlaku pada periode ini &mdash; dipungut sejak ' . date('d/m/Y', strtotime(Tax::PPH_MULAI))

@@ -310,10 +310,11 @@ render_head('Laba & Biaya', 'pnl');
         </tr>
         <tr>
           <td>Peredaran bruto tanpa PPN (DPP)</td>
-          <td class="num"><?= rp((float) $c['setelah_diskon'] - (float) $c['ppn']) ?></td>
-          <td class="num"><?= $pH((float) $c['setelah_diskon'] - (float) $c['ppn']) ?></td>
+          <td class="num"><?= rp((float) $c['dpp']) ?></td>
+          <td class="num"><?= $pH((float) $c['dpp']) ?></td>
           <td class="muted" style="font-size:11.5px">
-            setelah diskon &minus; PPN &mdash; dasar pengenaan pajak e-commerce
+            pendapatan kotor <b>sebelum diskon</b> &minus; PPN &mdash; dasar pengenaan
+            pajak e-commerce; diskon tidak mengurangi dasar ini
           </td>
           <td></td>
         </tr>

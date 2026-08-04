@@ -311,17 +311,27 @@ $c = Reports::rantaiLaba([
           <td class="num neg"><?= rp(-$c['ppn']) ?></td>
           <td class="num neg"><?= num($c['ppn'] / $c['harga'] * 100, 2) ?>%</td>
           <td class="muted" style="font-size:11.5px">
-            <?= num($c['ppn_persen'], 0) ?>% dari harga setelah dikurang diskon
+            terkandung di dalam harga &mdash; dikeluarkan dengan
+            <?= num($c['ppn_persen'], 0) ?>/<?= num(100 + $c['ppn_persen'], 0) ?>
           </td>
           <td></td>
         </tr>
         <?php if ($c['pph_persen'] > 0): ?>
         <tr>
+          <td>Peredaran bruto tanpa PPN (DPP)</td>
+          <td class="num"><?= rp($c['dpp']) ?></td>
+          <td class="num"><?= num($c['dpp'] / $c['harga'] * 100, 2) ?>%</td>
+          <td class="muted" style="font-size:11.5px">
+            harga <b>sebelum diskon</b> &minus; PPN
+          </td>
+          <td></td>
+        </tr>
+        <tr>
           <td>Pajak e-commerce <?= num($c['pph_persen'], 1) ?>%</td>
           <td class="num neg"><?= rp(-$c['pph']) ?></td>
           <td class="num neg"><?= num($c['pph'] / $c['harga'] * 100, 2) ?>%</td>
           <td class="muted" style="font-size:11.5px">
-            <?= num($c['pph_persen'], 1) ?>% dari harga setelah dikurang diskon
+            <?= num($c['pph_persen'], 1) ?>% dari DPP &mdash; diskon tidak mengurangi dasarnya
           </td>
           <td></td>
         </tr>
@@ -475,6 +485,9 @@ $c = Reports::rantaiLaba([
             <td class="muted" style="font-size:11.5px">harga setelah diskon &minus; biaya platform</td></tr>
         <tr><td>PPN</td><td class="num neg" id="oPpn">-</td><td class="num neg" id="pPpn">-</td>
             <td class="muted" style="font-size:11.5px" id="kPpn">&mdash;</td></tr>
+        <tr><td>Peredaran bruto tanpa PPN (DPP)</td><td class="num" id="oDpp">-</td>
+            <td class="num" id="pDpp">-</td>
+            <td class="muted" style="font-size:11.5px">harga <b>sebelum diskon</b> &minus; PPN</td></tr>
         <tr><td>Pajak e-commerce</td><td class="num neg" id="oPph">-</td><td class="num neg" id="pPph">-</td>
             <td class="muted" style="font-size:11.5px" id="kPph">&mdash;</td></tr>
         <tr style="background:rgba(0,0,0,.02)">
@@ -555,8 +568,13 @@ $c = Reports::rantaiLaba([
 
   /**
    * Rantai nilai, urutannya sama persis dengan Reports::rantaiLaba() di sisi
-   * PHP: diskon dulu, lalu biaya platform, baru pajak. Pajak dihitung dari
-   * HARGA SETELAH DIKURANG DISKON.
+   * PHP: diskon dulu, lalu biaya platform, baru pajak.
+   *
+   * Dua pajaknya berbeda dasar, dan itu disengaja:
+   *   PPN  - dari nilai yang benar-benar ditagihkan (setelah diskon), dan
+   *          dikeluarkan DARI DALAM harga karena harga sudah termasuk PPN.
+   *   PPh  - dari peredaran bruto SEBELUM diskon tanpa PPN (PMK 37/2025),
+   *          sehingga diskon tidak mengurangi dasarnya.
    */
   function hitung(harga) {
     var potPct = ambil(elPot, awal.potPct);
@@ -570,8 +588,9 @@ $c = Reports::rantaiLaba([
     var biaya    = harga * biPct / 100;
     var lain     = harga * awal.lainPct / 100;
     var dana     = setelah - biaya - lain;
-    var nPpn     = setelah * ppn / 100;
-    var nPph     = setelah * pph / 100;
+    var nPpn     = setelah * ppn / (100 + ppn);
+    var dpp      = (harga - refund) * 100 / (100 + ppn);
+    var nPph     = dpp * pph / 100;
     var jual     = dana - nPpn - nPph;
 
     // HPP efektif: bila PPN masukan bisa dikreditkan, modal sebenarnya
@@ -581,7 +600,7 @@ $c = Reports::rantaiLaba([
 
     return {
       harga: harga, refund: refund, potongan: potongan, setelah: setelah,
-      biaya: biaya, lain: lain, dana: dana, ppn: nPpn, pph: nPph,
+      biaya: biaya, lain: lain, dana: dana, ppn: nPpn, dpp: dpp, pph: nPph,
       jual: jual, hpp: hpp, laba: jual - hpp,
       marjin: jual > 0 ? (jual - hpp) / jual * 100 : null,
       ppnPersen: ppn, pphPersen: pph, potPct: potPct, biPct: biPct
@@ -600,6 +619,7 @@ $c = Reports::rantaiLaba([
     set('oLain', rp(-v.lain));
     set('oDana', rp(v.dana), true);     set('pDana', p(v.dana), true);
     set('oPpn', rp(-v.ppn));            set('pPpn', p(v.ppn));
+    set('oDpp', rp(v.dpp));             set('pDpp', p(v.dpp));
     set('oPph', rp(-v.pph));            set('pPph', p(v.pph));
     set('kPpn', pc(v.ppnPersen, 0) + ' dari harga setelah dikurang diskon');
     set('kPph', pc(v.pphPersen, 1) + ' dari harga setelah dikurang diskon');

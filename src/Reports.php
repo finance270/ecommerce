@@ -98,9 +98,12 @@ final class Reports
         // harga 111.000 memuat PPN 11.000 (bukan 12.210) dan dasar pengenaan
         // pajaknya 100.000.
         $nilaiPpn = $setelahDiskon * $ppn / (100 + $ppn);
-        // Dasar pengenaan pajak: peredaran bruto TIDAK termasuk PPN
-        // (PMK 37/2025). Inilah dasar PPh Pasal 22 e-commerce.
-        $dpp = $setelahDiskon - $nilaiPpn;
+        // Dasar pengenaan PPh Pasal 22 e-commerce: peredaran bruto SEBELUM
+        // dikurangi potongan penjualan, dan TIDAK termasuk PPN (PMK 37/2025
+        // Pasal 1). Karena itu diskon tidak mengurangi dasar ini - berbeda
+        // dengan PPN yang memang dihitung dari nilai yang benar-benar
+        // ditagihkan.
+        $dpp = ($harga - $refund) * 100 / (100 + $ppn);
 
         // Laporan yang periodenya melintasi tanggal berlakunya PPh e-commerce
         // sudah menghitung nominalnya per baris di SQL; nilai itu dipakai apa
@@ -136,6 +139,7 @@ final class Reports
             'laba_usaha'       => $labaKotor - $beban,
             'marjin'           => $penjualan > 0 ? $labaKotor / $penjualan * 100 : null,
             'marjin_usaha'     => $penjualan > 0 ? ($labaKotor - $beban) / $penjualan * 100 : null,
+            'dpp'              => $dpp,
             'ppn_persen'       => $ppn,
             'pph_persen'       => $pph,
         ];
@@ -341,7 +345,7 @@ final class Reports
                 -- PPh e-commerce dihitung per baris karena baru berlaku sejak
                 -- tanggal tertentu; laporan yang mencakup sebelum dan sesudah
                 -- tanggal itu jadi benar tanpa perlu dipecah dua.
-                COALESCE(" . self::pphSql('ord_date', self::KOTOR . ' + total_potongan') . ",0) AS pph_nominal
+                COALESCE(" . self::pphSql('ord_date', self::KOTOR) . ",0) AS pph_nominal
              FROM settlements WHERE {$w}",
             $a
         ) ?? [];
@@ -815,12 +819,13 @@ final class Reports
     /**
      * Potongan SQL untuk PPh Pasal 22 e-commerce.
      *
-     * Dasar pengenaannya adalah peredaran bruto TIDAK termasuk PPN
-     * (PMK 37/2025). Karena harga jual di etalase sudah termasuk PPN, PPN-nya
-     * dikeluarkan lebih dulu: dasar = nilai setelah diskon / (1 + tarif PPN).
+     * Dasar pengenaannya adalah peredaran bruto SEBELUM dikurangi potongan
+     * penjualan dan TIDAK termasuk PPN (PMK 37/2025 Pasal 1). Karena harga
+     * jual di etalase sudah termasuk PPN, PPN-nya dikeluarkan lebih dulu:
+     * dasar = pendapatan kotor / (1 + tarif PPN).
      *
      * @param string $kolomTanggal kolom tanggal acuan pada baris tersebut
-     * @param string $dasar        nilai setelah diskon, masih termasuk PPN
+     * @param string $dasar        pendapatan kotor sebelum diskon, termasuk PPN
      */
     private static function pphSql(string $kolomTanggal, string $dasar): string
     {
@@ -913,7 +918,7 @@ final class Reports
         // syaratnya per baris - bukan satu tarif untuk seluruh rentang.
         // Laporan yang mencakup Juli dan Agustus sekaligus jadi benar tanpa
         // perlu dipecah dua.
-        $pph       = '(' . self::pphSql('st.period_awal', "(st.gross_amount + st.total_potongan) * {$porsi}") . ')';
+        $pph       = '(' . self::pphSql('st.period_awal', "st.gross_amount * {$porsi}") . ')';
         $penjualan = "({$dana} - {$ppn} - {$pph})";
         $laba      = "({$penjualan} - {$hpp})";
 
@@ -1214,7 +1219,7 @@ final class Reports
                     MAX(pc.cost_per_unit)                             AS hpp_unit,
                     " . self::pphSql(
                         'st.period_awal',
-                        '(st.gross_amount + st.total_potongan) * i.subtotal_before_disc / o.items_subtotal_before'
+                        'st.gross_amount * i.subtotal_before_disc / o.items_subtotal_before'
                     ) . " AS pph_nominal
              FROM ({$sub}) st
              STRAIGHT_JOIN orders o
