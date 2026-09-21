@@ -597,18 +597,34 @@ final class Reports
     /**
      * Daftar pesanannya, yang paling lama menunggu lebih dulu.
      *
+     * Tanpa $ym yang ditampilkan hanya yang sudah lewat tenggat - itu yang
+     * perlu ditanyakan ke platform. Begitu satu BULAN PESANAN dipilih,
+     * seluruh pesanan yang belum cair ikut tampil termasuk yang masih dalam
+     * masa pencairan, karena pertanyaannya berubah menjadi "pesanan mana saja
+     * di bulan ini yang labanya belum lengkap".
+     *
      * @return array<int,array>
      */
     public static function danaBelumDilepasRinci(
         int $batasHari = 7,
         ?string $platform = null,
-        int $limit = 300
+        int $limit = 300,
+        ?string $ym = null
     ): array {
         $tgl = self::TGL_SELESAI;
-        $a = [$batasHari];
+        $a = [];
         $w = '';
+        if ($ym !== null) {
+            $awal = $ym . '-01';
+            $w .= ' AND o.order_date BETWEEN ? AND ?';
+            $a[] = $awal;
+            $a[] = date('Y-m-t', strtotime($awal) ?: time());
+        } else {
+            $w .= ' AND DATEDIFF(CURDATE(), ' . $tgl . ') > ?';
+            $a[] = $batasHari;
+        }
         if ($platform !== null && $platform !== '') {
-            $w = ' AND o.platform = ?';
+            $w .= ' AND o.platform = ?';
             $a[] = $platform;
         }
 
@@ -623,9 +639,40 @@ final class Reports
                        FROM settlements WHERE settlement_date IS NOT NULL GROUP BY platform) c
                  ON c.platform = o.platform
               WHERE o.status_norm = 'selesai' AND s.id IS NULL
-                AND {$tgl} BETWEEN c.awal AND c.akhir
-                AND DATEDIFF(CURDATE(), {$tgl}) > ? {$w}
+                AND {$tgl} BETWEEN c.awal AND c.akhir {$w}
               ORDER BY umur DESC, o.order_id
+              LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /**
+     * Pesanan yang belum selesai pada satu bulan pesanan.
+     *
+     * Status 'lainnya' ikut karena itu status yang tidak dikenali - sama
+     * belum tuntasnya dengan 'proses', dan sama-sama membuat angka bulan itu
+     * masih bisa berubah.
+     *
+     * @return array<int,array>
+     */
+    public static function pesananBelumSelesai(?string $ym = null, int $limit = 300): array
+    {
+        $a = [];
+        $w = '';
+        if ($ym !== null) {
+            $awal = $ym . '-01';
+            $w = ' AND o.order_date BETWEEN ? AND ?';
+            $a[] = $awal;
+            $a[] = date('Y-m-t', strtotime($awal) ?: time());
+        }
+
+        return Db::all(
+            "SELECT o.platform, o.order_id, o.order_date, o.status_raw, o.status_norm,
+                    DATEDIFF(CURDATE(), o.order_date) AS umur,
+                    o.items_subtotal_after AS nilai
+               FROM orders o
+              WHERE o.status_norm IN ('proses','lainnya') {$w}
+              ORDER BY o.order_date, o.order_id
               LIMIT {$limit}",
             $a
         );
@@ -1642,9 +1689,22 @@ final class Reports
     }
 
     /**
-     * Kelengkapan data per bulan: pesanan, settlement, alokasi produk,
-     * HPP, dan beban operasional - untuk melihat periode mana yang belum
-     * diperbarui.
+     * Kelengkapan data per BULAN PESANAN.
+     *
+     * Dasar periodenya sengaja tanggal pesanan, persis seperti Laba & Biaya.
+     * Begitu sebuah pesanan masuk, perjalanannya sudah pasti: berakhir
+     * SELESAI, atau berhenti sebagai RETUR/BATAL. Karena itu yang perlu
+     * dipantau adalah dua hal yang membuat bulan itu belum bisa dibaca final:
+     *
+     *   1. Pesanan yang BELUM SELESAI (masih proses) - angkanya masih akan
+     *      berubah, entah menjadi penjualan atau menjadi batal.
+     *   2. Pesanan yang sudah selesai tetapi DANANYA BELUM CAIR - nilai
+     *      jualnya sudah diakui, tetapi biaya platform dan dana bersihnya
+     *      belum diketahui sehingga labanya belum lengkap.
+     *
+     * Pesanan yang berkas penghasilannya memang belum diunggah sampai tanggal
+     * itu dipisahkan sebagai "belum bisa dinilai" - yang belum ada di situ
+     * datanya, bukan dananya.
      */
     public static function dataMonitor(): array
     {
@@ -1654,40 +1714,90 @@ final class Reports
                 $bulan[$ym] = [
                     'ym' => $ym, 'pesanan' => 0, 'pesanan_update' => null,
                     'settlement' => 0, 'settlement_update' => null,
-                    'settle_pesanan' => 0, 'settle_tanpa_order' => 0,
-                    'nilai_bersih' => 0.0, 'nilai_tanpa_order' => 0.0,
+                    'selesai' => 0, 'retur_batal' => 0,
+                    'pending' => 0, 'nilai_pending' => 0.0,
+                    'belum_cair' => 0, 'nilai_belum_cair' => 0.0,
+                    'belum_dinilai' => 0,
+                    'tanpa_pesanan' => 0, 'nilai_tanpa_pesanan' => 0.0,
                     'produk' => 0, 'produk_tanpa_hpp' => 0,
                     'beban' => 0.0, 'beban_baris' => 0,
                 ];
             }
         };
 
+        $tgl = self::TGL_SELESAI;
+        $pending = "o.status_norm IN ('proses','lainnya')";
+        // Satu baris per pesanan: satu pesanan bisa punya banyak baris
+        // settlement (pencairan, biaya iklan, penyesuaian), dan tanpa
+        // diringkas lebih dulu jumlah pesanannya ikut berlipat.
+        $adaCair = "(SELECT platform, order_id, MAX(updated_at) upd
+                       FROM settlements GROUP BY platform, order_id)";
+        // Batas penilaian: sampai tanggal berapa berkas penghasilan tiap
+        // platform benar-benar ada.
+        $cakupan = '(SELECT platform, MIN(settlement_date) awal, MAX(settlement_date) akhir
+                       FROM settlements WHERE settlement_date IS NOT NULL GROUP BY platform)';
+
         foreach (Db::all(
-            "SELECT DATE_FORMAT(order_date,'%Y-%m') ym, COUNT(*) n, MAX(updated_at) upd
-             FROM orders WHERE order_date IS NOT NULL GROUP BY ym"
+            "SELECT DATE_FORMAT(o.order_date,'%Y-%m') ym,
+                    COUNT(*) AS pesanan,
+                    SUM(o.status_norm = 'selesai')            AS selesai,
+                    SUM(o.status_norm IN ('retur','batal'))   AS retur_batal,
+                    SUM({$pending})                           AS pending,
+                    COALESCE(SUM(CASE WHEN {$pending} THEN o.items_subtotal_after END), 0)
+                        AS nilai_pending,
+                    SUM(o.status_norm = 'selesai' AND s.order_id IS NULL
+                        AND {$tgl} BETWEEN c.awal AND c.akhir) AS belum_cair,
+                    COALESCE(SUM(CASE WHEN o.status_norm = 'selesai' AND s.order_id IS NULL
+                                       AND {$tgl} BETWEEN c.awal AND c.akhir
+                                      THEN o.items_subtotal_after END), 0) AS nilai_belum_cair,
+                    SUM(o.status_norm = 'selesai' AND s.order_id IS NULL
+                        AND (c.akhir IS NULL OR {$tgl} NOT BETWEEN c.awal AND c.akhir))
+                        AS belum_dinilai,
+                    MAX(o.updated_at) AS pesanan_update,
+                    MAX(s.upd)        AS settlement_update
+             FROM orders o
+             LEFT JOIN {$adaCair} s ON s.platform = o.platform AND s.order_id = o.order_id
+             LEFT JOIN {$cakupan} c ON c.platform = o.platform
+             WHERE o.order_date IS NOT NULL
+             GROUP BY ym"
         ) as $r) {
             $touch($bulan, $r['ym']);
-            $bulan[$r['ym']]['pesanan'] = (int) $r['n'];
-            $bulan[$r['ym']]['pesanan_update'] = $r['upd'];
+            $bulan[$r['ym']] = array_merge($bulan[$r['ym']], [
+                'pesanan'          => (int) $r['pesanan'],
+                'selesai'          => (int) $r['selesai'],
+                'retur_batal'      => (int) $r['retur_batal'],
+                'pending'          => (int) $r['pending'],
+                'nilai_pending'    => (float) $r['nilai_pending'],
+                'belum_cair'       => (int) $r['belum_cair'],
+                'nilai_belum_cair' => (float) $r['nilai_belum_cair'],
+                'belum_dinilai'    => (int) $r['belum_dinilai'],
+                'pesanan_update'   => $r['pesanan_update'],
+                'settlement_update' => $r['settlement_update'],
+            ]);
         }
 
+        // Bulan yang uangnya sudah cair tetapi berkas pesanannya belum pernah
+        // diunggah tidak punya baris pesanan sama sekali. Barisnya tetap
+        // dimunculkan - justru bulan seperti itu yang paling perlu dilihat.
         foreach (Db::all(
             "SELECT DATE_FORMAT(settlement_date,'%Y-%m') ym, COUNT(*) n, MAX(updated_at) upd
              FROM settlements WHERE settlement_date IS NOT NULL GROUP BY ym"
         ) as $r) {
             $touch($bulan, $r['ym']);
             $bulan[$r['ym']]['settlement'] = (int) $r['n'];
-            $bulan[$r['ym']]['settlement_update'] = $r['upd'];
+            if ($bulan[$r['ym']]['settlement_update'] === null) {
+                $bulan[$r['ym']]['settlement_update'] = $r['upd'];
+            }
         }
 
-        // Settlement yang berkas pesanannya belum diunggah - inilah penyebab
-        // "alokasi produk" tidak mencapai 100%.
+        // Uang yang cair atas pesanan yang tidak ada di database sama sekali.
+        // Bukan lagi ukuran utama kelengkapan - dasarnya bulan pencairan,
+        // bukan bulan pesanan - tetapi tetap ditampilkan sebagai catatan,
+        // karena uang ini tidak masuk bulan pesanan mana pun.
         foreach (Db::all(
             "SELECT st.period_ym AS ym,
-                    COUNT(*) AS total,
-                    SUM(o.id IS NULL) AS tanpa_order,
-                    SUM(st.net_amount) AS bersih,
-                    SUM(CASE WHEN o.id IS NULL THEN st.net_amount ELSE 0 END) AS bersih_tanpa_order
+                    COUNT(*) AS tanpa_order,
+                    SUM(st.net_amount) AS nilai
              FROM (
                  SELECT platform, order_id,
                         DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
@@ -1697,13 +1807,12 @@ final class Reports
              ) st
              LEFT JOIN orders o ON o.platform = st.platform AND o.order_id = st.order_id
                                AND o.items_subtotal_before > 0
+             WHERE o.id IS NULL
              GROUP BY st.period_ym"
         ) as $r) {
             $touch($bulan, $r['ym']);
-            $bulan[$r['ym']]['settle_pesanan'] = (int) $r['total'];
-            $bulan[$r['ym']]['settle_tanpa_order'] = (int) $r['tanpa_order'];
-            $bulan[$r['ym']]['nilai_bersih'] = (float) $r['bersih'];
-            $bulan[$r['ym']]['nilai_tanpa_order'] = (float) $r['bersih_tanpa_order'];
+            $bulan[$r['ym']]['tanpa_pesanan'] = (int) $r['tanpa_order'];
+            $bulan[$r['ym']]['nilai_tanpa_pesanan'] = (float) $r['nilai'];
         }
 
         foreach (self::costCoverageByMonth() as $r) {
@@ -1730,7 +1839,20 @@ final class Reports
     /** Rincian settlement yang belum ada data pesanannya, per bulan. */
     public static function unmatchedSettlements(?string $ym, int $limit = 300): array
     {
-        [$w, $a] = self::filterBulanPesanan($ym, null);
+        // Disaring menurut BULAN PENCAIRAN, bukan bulan pesanan: justru
+        // pesanannya yang tidak ada, jadi tanggal pesanannya pun belum
+        // diketahui. Syarat status juga tidak dipakai di sini - salinan
+        // status pada baris settlement ikut kosong selama berkas pesanannya
+        // belum diunggah.
+        $w = 'settlement_date IS NOT NULL';
+        $a = [];
+        if ($ym !== null) {
+            $awal = $ym . '-01';
+            $w .= ' AND settlement_date BETWEEN ? AND ?';
+            $a[] = $awal;
+            $a[] = date('Y-m-t', strtotime($awal) ?: time());
+        }
+
         return Db::all(
             "SELECT st.period_ym, st.platform, st.order_id, st.net_amount
              FROM (

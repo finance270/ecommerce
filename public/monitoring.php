@@ -6,10 +6,15 @@ require_once __DIR__ . '/_layout.php';
 Auth::requireTab('monitoring');
 @set_time_limit(300);
 
-$ym = q('ym');
-if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
-    $ym = null;
-}
+/** Ambil satu parameter bulan (YYYY-MM) dari tautan, atau null. */
+$bulanParam = static function (string $nama): ?string {
+    $v = q($nama);
+    return is_string($v) && preg_match('/^\d{4}-\d{2}$/', $v) === 1 ? $v : null;
+};
+
+$ym   = $bulanParam('ym');       // kartu settlement tanpa data pesanan
+$cair = $bulanParam('cair');     // rincian "dana belum cair" satu bulan
+$pend = $bulanParam('pending');  // rincian "belum selesai" satu bulan
 
 $status    = Reports::uploadStatus();
 $bulan     = Reports::dataMonitor();
@@ -21,9 +26,19 @@ $hari = (int) (q('hari') ?? 7);
 if (!in_array($hari, [3, 5, 7, 10, 14], true)) {
     $hari = 7;
 }
-$belumCair  = Reports::danaBelumDilepas($hari);
-$belumRinci = Reports::danaBelumDilepasRinci($hari, null, 200);
-$cakupan    = Reports::cakupanSettlement();
+$belumCair    = Reports::danaBelumDilepas($hari);
+$belumRinci   = Reports::danaBelumDilepasRinci($hari, null, 300, $cair);
+$belumSelesai = Reports::pesananBelumSelesai($pend, 300);
+$cakupan      = Reports::cakupanSettlement();
+
+/** Tautan ke halaman ini dengan sebagian parameter diganti. */
+$tautan = static function (array $ganti) use ($hari, $ym, $cair, $pend): string {
+    $p = array_merge(
+        ['hari' => $hari, 'ym' => $ym, 'cair' => $cair, 'pending' => $pend],
+        $ganti
+    );
+    return '?' . http_build_query(array_filter($p, static fn($v) => $v !== null && $v !== ''));
+};
 
 $kelompok = [
     0 => ['Masih dalam masa pencairan', 'ok',   'Selesai ' . $hari . ' hari terakhir - wajar belum cair.'],
@@ -54,7 +69,7 @@ render_head('Monitoring Data', 'monitoring');
   angka final padahal berkasnya belum lengkap.
 </p>
 
-<div class="card">
+<div class="card" id="dana">
   <h2>Dana belum dilepas</h2>
   <p class="help" style="margin-top:-4px">
     Dilihat dari sisi <b>pesanan</b>: mana yang sudah selesai tetapi belum ada catatan
@@ -64,7 +79,9 @@ render_head('Monitoring Data', 'monitoring');
   </p>
 
   <form method="get" class="filters" style="margin-bottom:12px">
-    <?php if ($ym !== null): ?><input type="hidden" name="ym" value="<?= e($ym) ?>"><?php endif; ?>
+    <?php foreach (['ym' => $ym, 'cair' => $cair, 'pending' => $pend] as $k => $v): ?>
+      <?php if ($v !== null): ?><input type="hidden" name="<?= e($k) ?>" value="<?= e($v) ?>"><?php endif; ?>
+    <?php endforeach; ?>
     <div class="field">
       <label>Tenggat pencairan</label>
       <select name="hari" onchange="this.form.submit()">
@@ -114,23 +131,41 @@ render_head('Monitoring Data', 'monitoring');
     </div>
   <?php endif; ?>
 
-  <?php if ($belumRinci !== []): ?>
-    <h3 style="margin-top:18px">Pesanan yang paling lama menunggu</h3>
+  <?php if ($belumRinci !== [] || $cair !== null): ?>
+    <h3 style="margin-top:18px" id="rinci-cair">
+      <?php if ($cair !== null): ?>
+        Pesanan <?= e($cair) ?> yang dananya belum cair
+        <a class="btn ghost sm" href="<?= e($tautan(['cair' => null]) . '#dana') ?>">Semua bulan</a>
+      <?php else: ?>
+        Pesanan yang paling lama menunggu
+      <?php endif; ?>
+      <a class="btn ghost sm" href="<?= e('export.php?report=belum_cair' . ($cair !== null ? '&ym=' . urlencode($cair) : '&hari=' . $hari)) ?>">Ekspor CSV</a>
+    </h3>
     <p class="help" style="margin-top:-4px">
-      Sudah lewat <?= $hari ?> hari sejak selesai dan masih belum ada pencairannya.
-      <?= count($belumRinci) >= 200 ? 'Ditampilkan 200 teratas.' : '' ?>
+      <?php if ($cair !== null): ?>
+        Seluruh pesanan <b>selesai</b> bertanggal <?= e($cair) ?> yang belum ada catatan
+        pencairannya &mdash; termasuk yang masih wajar karena baru selesai. Selama ini belum cair,
+        biaya platform dan laba pesanan tersebut belum masuk hitungan.
+      <?php else: ?>
+        Sudah lewat <?= $hari ?> hari sejak selesai dan masih belum ada pencairannya.
+      <?php endif; ?>
+      <?= count($belumRinci) >= 300 ? 'Ditampilkan 300 teratas.' : '' ?>
     </p>
+    <?php if ($belumRinci === []): ?>
+      <div class="alert ok">Semua pesanan selesai bulan <?= e((string) $cair) ?> sudah ada catatan pencairannya.</div>
+    <?php else: ?>
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Platform</th><th>No. Pesanan</th><th>Tanggal selesai</th>
+          <th>Platform</th><th>No. Pesanan</th><th>Tanggal pesanan</th><th>Tanggal selesai</th>
           <th class="num">Menunggu</th><th class="num">Nilai</th><th>Status di platform</th>
         </tr></thead>
         <tbody>
         <?php foreach ($belumRinci as $r): ?>
           <tr>
             <td><?= platformBadge((string) $r['platform']) ?></td>
-            <td class="nowrap"><a href="<?= e('orders.php?q=' . urlencode((string) $r['order_id'])) ?>"><?= e($r['order_id']) ?></a></td>
+            <td class="nowrap"><a href="<?= e('order.php?platform=' . urlencode((string) $r['platform']) . '&id=' . urlencode((string) $r['order_id'])) ?>"><?= e($r['order_id']) ?></a></td>
+            <td class="nowrap muted"><?= e(date('d/m/Y', strtotime((string) $r['order_date']))) ?></td>
             <td class="nowrap muted"><?= e(date('d/m/Y', strtotime((string) $r['tgl_selesai']))) ?></td>
             <td class="num <?= (int) $r['umur'] > $hari * 2 ? 'bad' : '' ?>"><?= num((int) $r['umur']) ?> hari</td>
             <td class="num"><?= rp((float) $r['nilai']) ?></td>
@@ -140,6 +175,7 @@ render_head('Monitoring Data', 'monitoring');
         </tbody>
       </table>
     </div>
+    <?php endif; ?>
   <?php endif; ?>
 </div>
 
@@ -197,44 +233,66 @@ render_head('Monitoring Data', 'monitoring');
     <a class="btn ghost sm" href="export.php?report=monitoring">Ekspor CSV</a>
   </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Kolom <b>Alokasi produk</b> menunjukkan berapa persen pesanan yang sudah settle dan isi
-    produknya diketahui. Kurang dari 100% berarti ada settlement yang <b>berkas pesanannya belum
-    diunggah</b> untuk periode itu, sehingga laba per produk belum mencakup semuanya.
+    Dihitung menurut <b>tanggal pesanan</b>, sama seperti Laba &amp; Biaya. Setiap pesanan pasti
+    berakhir <b>selesai</b> atau berhenti sebagai <b>retur/batal</b>; selama masih ada yang
+    <b>belum selesai</b>, angka bulan itu masih akan berubah. Pesanan yang sudah selesai tetapi
+    <b>dananya belum cair</b> sudah diakui sebagai penjualan, tetapi biaya platform dan laba
+    bersihnya belum diketahui. Klik angkanya untuk melihat pesanan mana saja.
   </p>
   <div class="table-wrap">
     <table>
       <thead><tr>
         <th>Bulan</th>
-        <th class="num">Pesanan</th><th class="num">Settlement</th>
-        <th class="num">Alokasi produk</th><th class="num">Belum ada pesanan</th>
+        <th class="num">Pesanan</th><th class="num">Selesai</th><th class="num">Retur/batal</th>
+        <th class="num">Belum selesai</th><th class="num">Dana belum cair</th>
         <th class="num">HPP</th><th class="num">Beban operasional</th>
         <th>Terakhir diperbarui</th>
       </tr></thead>
       <tbody>
       <?php foreach ($bulan as $b):
-          // Dihitung dari JUMLAH pesanan, bukan nilainya: nilai settlement bisa
-          // negatif (pembalikan/refund) sehingga persentase berbasis nilai
-          // dapat melampaui 100% dan membingungkan.
-          $alokasi = $b['settle_pesanan'] > 0
-              ? ($b['settle_pesanan'] - $b['settle_tanpa_order']) / $b['settle_pesanan'] * 100
-              : 100.0;
           $hppOk = $b['produk'] > 0 ? ($b['produk'] - $b['produk_tanpa_hpp']) / $b['produk'] * 100 : null;
-          $upd = max((string) $b['pesanan_update'], (string) $b['settlement_update']); ?>
-        <tr>
+          $upd = max((string) $b['pesanan_update'], (string) $b['settlement_update']);
+          // Persentase dihitung dari JUMLAH pesanan, bukan nilainya: nilai
+          // pesanan retur bisa negatif sehingga persentase berbasis nilai
+          // dapat melampaui 100% dan membingungkan.
+          $selesaiPersen = $b['pesanan'] > 0 ? $b['selesai'] / $b['pesanan'] * 100 : null;
+          $cairPersen = $b['selesai'] > 0
+              ? ($b['selesai'] - $b['belum_cair'] - $b['belum_dinilai']) / $b['selesai'] * 100
+              : null; ?>
+        <tr<?= $cair === $b['ym'] || $pend === $b['ym'] ? ' class="sorot"' : '' ?>>
           <td class="nowrap"><b><?= e($b['ym']) ?></b></td>
           <td class="num"><?= $b['pesanan'] > 0 ? num($b['pesanan']) : '<span class="badge bad">kosong</span>' ?></td>
-          <td class="num"><?= $b['settlement'] > 0 ? num($b['settlement']) : '<span class="badge muted">belum cair</span>' ?></td>
           <td class="num">
-            <?php if ($b['settlement'] > 0): ?>
-              <span class="<?= $alokasi >= 99.95 ? 'pos' : 'neg' ?>"><?= number_format($alokasi, 1, ',', '.') ?>%</span>
-              <div class="bar"><span style="width:<?= round($alokasi) ?>%;background:<?= $alokasi >= 99.95 ? '#128a5b' : '#c0392b' ?>"></span></div>
+            <?php if ($b['pesanan'] > 0): ?>
+              <?= num($b['selesai']) ?>
+              <div class="muted" style="font-size:11px"><?= number_format((float) $selesaiPersen, 1, ',', '.') ?>%</div>
+            <?php else: ?><span class="muted">-</span><?php endif; ?>
+          </td>
+          <td class="num"><?= $b['retur_batal'] > 0 ? num($b['retur_batal']) : '<span class="muted">-</span>' ?></td>
+          <td class="num">
+            <?php if ($b['pending'] > 0): ?>
+              <a href="<?= e($tautan(['pending' => $b['ym']]) . '#proses') ?>" class="neg"><?= num($b['pending']) ?></a>
+              <div class="muted" style="font-size:11px">nilai <?= rp($b['nilai_pending']) ?></div>
+            <?php elseif ($b['pesanan'] > 0): ?><span class="badge ok">tuntas</span>
             <?php else: ?><span class="muted">-</span><?php endif; ?>
           </td>
           <td class="num">
-            <?php if ($b['settle_tanpa_order'] > 0): ?>
-              <a href="?ym=<?= e($b['ym']) ?>#belum"><?= num($b['settle_tanpa_order']) ?> dari <?= num($b['settle_pesanan']) ?></a>
-              <div class="muted" style="font-size:11px">nilai <?= rp($b['nilai_tanpa_order']) ?></div>
+            <?php if ($b['belum_cair'] > 0): ?>
+              <a href="<?= e($tautan(['cair' => $b['ym']]) . '#dana') ?>" class="neg"><?= num($b['belum_cair']) ?> dari <?= num($b['selesai']) ?></a>
+              <div class="muted" style="font-size:11px">nilai <?= rp($b['nilai_belum_cair']) ?></div>
+              <div class="bar"><span style="width:<?= round((float) $cairPersen) ?>%;background:#c0392b"></span></div>
+            <?php elseif ($b['belum_dinilai'] > 0): ?>
+              <span class="badge info">belum bisa dinilai</span>
+              <div class="muted" style="font-size:11px"><?= num($b['belum_dinilai']) ?> pesanan &mdash; berkas penghasilannya belum ada</div>
+            <?php elseif ($b['selesai'] > 0): ?><span class="badge ok">cair semua</span>
             <?php else: ?><span class="muted">-</span><?php endif; ?>
+            <?php if ($b['tanpa_pesanan'] > 0): ?>
+              <div style="font-size:11px">
+                <a class="muted" href="<?= e($tautan(['ym' => $b['ym']]) . '#belum') ?>">
+                  +<?= num($b['tanpa_pesanan']) ?> cair tanpa data pesanan
+                </a>
+              </div>
+            <?php endif; ?>
           </td>
           <td class="num">
             <?php if ($hppOk === null): ?><span class="muted">-</span>
@@ -256,10 +314,59 @@ render_head('Monitoring Data', 'monitoring');
           <td class="nowrap muted"><?= $upd !== '' ? e(date('d/m/Y H:i', strtotime($upd))) : '-' ?></td>
         </tr>
       <?php endforeach; ?>
-      <?php if ($bulan === []): ?><tr><td colspan="8" class="muted">Belum ada data.</td></tr><?php endif; ?>
+      <?php if ($bulan === []): ?><tr><td colspan="9" class="muted">Belum ada data.</td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>
+</div>
+
+<div class="card" id="proses">
+  <h2>
+    Pesanan yang belum selesai<?= $pend !== null ? ' &mdash; ' . e($pend) : '' ?>
+    <?php if ($pend !== null): ?>
+      <a class="btn ghost sm" href="<?= e($tautan(['pending' => null]) . '#proses') ?>">Semua bulan</a>
+    <?php endif; ?>
+    <a class="btn ghost sm" href="<?= e('export.php?report=belum_selesai' . ($pend !== null ? '&ym=' . urlencode($pend) : '')) ?>">Ekspor CSV</a>
+  </h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:12px">
+    Masih berjalan di platform &mdash; belum selesai, belum retur, belum batal. Pesanan ini
+    <b>belum diakui</b> sebagai penjualan di Laba &amp; Biaya, jadi angka bulannya masih akan
+    berubah setelah statusnya berubah. Untuk bulan yang sudah lama lewat, status yang tidak
+    pernah berubah biasanya berarti <b>berkas pesanannya belum diunggah ulang</b> setelah
+    pesanan itu tuntas.
+    <?= count($belumSelesai) >= 300 ? 'Ditampilkan 300 pesanan terlama.' : '' ?>
+  </p>
+  <?php if ($belumSelesai === []): ?>
+    <div class="alert ok">
+      Tidak ada pesanan yang menggantung<?= $pend !== null ? ' pada ' . e($pend) : '' ?> &mdash;
+      semuanya sudah selesai, retur, atau batal.
+    </div>
+  <?php else: ?>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Platform</th><th>No. Pesanan</th><th>Tanggal pesanan</th>
+          <th class="num">Umur</th><th class="num">Nilai</th><th>Status di platform</th>
+        </tr></thead>
+        <tbody>
+        <?php $totPend = 0.0; foreach ($belumSelesai as $r): $totPend += (float) $r['nilai']; ?>
+          <tr>
+            <td><?= platformBadge((string) $r['platform']) ?></td>
+            <td class="nowrap"><a href="<?= e('order.php?platform=' . urlencode((string) $r['platform']) . '&id=' . urlencode((string) $r['order_id'])) ?>"><?= e($r['order_id']) ?></a></td>
+            <td class="nowrap muted"><?= e(date('d/m/Y', strtotime((string) $r['order_date']))) ?></td>
+            <td class="num <?= (int) $r['umur'] > 30 ? 'bad' : '' ?>"><?= num((int) $r['umur']) ?> hari</td>
+            <td class="num"><?= rp((float) $r['nilai']) ?></td>
+            <td class="trunc muted" style="font-size:12px" title="<?= e((string) $r['status_raw']) ?>">
+              <?= e($r['status_raw'] ?: $r['status_norm']) ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+        <tfoot><tr><td colspan="4">Total <?= num(count($belumSelesai)) ?> pesanan ditampilkan</td>
+          <td class="num"><?= rp($totPend) ?></td><td></td></tr></tfoot>
+      </table>
+    </div>
+  <?php endif; ?>
 </div>
 
 <div class="card" id="belum">
@@ -268,12 +375,17 @@ render_head('Monitoring Data', 'monitoring');
     <a class="btn ghost sm" href="<?= e('export.php?report=unmatched' . ($ym !== null ? '&ym=' . urlencode($ym) : '')) ?>">Ekspor CSV</a>
   </h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
-    Dananya sudah cair tapi berkas pesanan untuk periode itu belum diunggah, sehingga isi
-    produknya belum diketahui. Inilah yang membuat <i>alokasi produk</i> tidak mencapai 100%.
-    Unggah berkas <b>Semua Pesanan</b> (Tokopedia) atau <b>Order</b> (Shopee) yang mencakup
-    tanggal pesanan tersebut.
+    Kebalikan dari tabel di atas: dananya sudah cair, tetapi pesanannya sendiri tidak ada di
+    database sehingga tidak muncul di bulan pesanan mana pun. Isi produknya tidak diketahui dan
+    uang ini tidak ikut Laba &amp; Biaya. Unggah berkas <b>Semua Pesanan</b> (Tokopedia) atau
+    <b>Order</b> (Shopee) yang mencakup tanggal pesanan tersebut. Bulan di sini adalah
+    <b>bulan pencairan</b>, karena tanggal pesanannya memang belum diketahui.
   </p>
   <form method="get" class="filters" style="margin-bottom:12px">
+    <input type="hidden" name="hari" value="<?= e((string) $hari) ?>">
+    <?php foreach (['cair' => $cair, 'pending' => $pend] as $k => $v): ?>
+      <?php if ($v !== null): ?><input type="hidden" name="<?= e($k) ?>" value="<?= e($v) ?>"><?php endif; ?>
+    <?php endforeach; ?>
     <div class="field">
       <label>Bulan</label>
       <select name="ym" onchange="this.form.submit()">

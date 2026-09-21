@@ -247,7 +247,7 @@ akan **0**.
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
 | **Pengembalian** | Refund per bulan, per produk, dan per transaksi &mdash; laporan tersendiri |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
-| **Monitoring** | Periode mana yang datanya belum diperbarui, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
+| **Monitoring** | Per bulan pesanan: mana yang belum selesai, mana yang dananya belum cair, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses, dan penghapusan data per bulan (admin) |
 | **Pengguna** | *(admin saja)* Buat akun, atur tab yang boleh dibuka, atur hak atas data gaji, dan ambil **tautan direksi** |
 
@@ -386,15 +386,24 @@ Menu **Monitoring** menjawab pertanyaan "periode mana yang belum saya update":
   > berkas Income-nya belum diunggah akan tampak seperti miliaran rupiah tertahan.
 - **Berkas terakhir diunggah** untuk tiap jenis (4 berkas platform + HPP + beban), lengkap
   dengan umurnya. Lewat seminggu ditandai, lewat dua minggu ditandai lebih keras.
-- **Kelengkapan per bulan**: jumlah pesanan, jumlah settlement, persentase *alokasi produk*,
-  kelengkapan HPP, dan apakah beban operasional sudah diisi.
-- **Settlement yang belum ada data pesanannya** — inilah penyebab angka seperti
-  "99,8% pesanan yang bisa dipecah ke produk". Daftarnya bisa difilter per bulan dan diekspor,
-  jadi Anda tahu persis berkas periode mana yang perlu diunggah.
+- **Kelengkapan per bulan** — seluruhnya menurut **tanggal pesanan**, sama seperti Laba &
+  Biaya. Setiap pesanan pasti berakhir *selesai* atau berhenti sebagai *retur/batal*, jadi yang
+  dipantau adalah dua hal yang membuat bulan itu belum bisa dibaca final:
+  **belum selesai** (masih proses &mdash; angkanya masih akan berubah) dan **dana belum cair**
+  (sudah diakui sebagai penjualan, tetapi biaya platform dan laba bersihnya belum diketahui).
+  Angkanya bisa diklik untuk melihat pesanan mana saja. Ditambah kelengkapan HPP dan apakah
+  beban operasional sudah diisi.
+- **Pesanan yang belum selesai** — daftar pesanan yang masih berjalan di platform, bisa
+  disaring per bulan pesanan dan diekspor. Status yang tidak pernah berubah pada bulan yang
+  sudah lama lewat biasanya berarti berkas pesanannya belum diunggah ulang.
+- **Settlement yang belum ada data pesanannya** — kebalikannya: uangnya cair, pesanannya tidak
+  ada di database, sehingga tidak masuk bulan pesanan mana pun dan tidak ikut Laba & Biaya.
+  Bulannya adalah **bulan pencairan**, karena tanggal pesanannya memang belum diketahui.
+  Daftarnya bisa difilter per bulan dan diekspor, jadi Anda tahu persis berkas periode mana
+  yang perlu diunggah.
 
-Persentase kelengkapan dihitung dari **jumlah pesanan**, bukan nilainya, karena nilai settlement
-bisa negatif (pembalikan/refund) sehingga persentase berbasis nilai dapat melewati 100% dan
-membingungkan.
+Persentase kelengkapan dihitung dari **jumlah pesanan**, bukan nilainya, karena nilai pesanan
+retur bisa negatif sehingga persentase berbasis nilai dapat melewati 100% dan membingungkan.
 
 ### Uji kewajaran HPP
 

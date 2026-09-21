@@ -127,6 +127,8 @@ th {
 }
 .table-wrap.xscroll th { top: 0; }
 tbody tr:hover { background: #fafbfd; }
+/* Baris yang sedang dibuka rinciannya di kartu lain pada halaman yang sama. */
+tbody tr.sorot, tbody tr.sorot:hover { background: var(--info-bg); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tfoot td { font-weight: 700; background: #f7f9fc; border-top: 2px solid var(--line); }
 .neg { color: var(--bad); }

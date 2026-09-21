@@ -41,6 +41,7 @@ $tabLaporan = [
     'product_net' => 'pnl', 'product_profit' => 'pnl',
     'products' => 'products', 'weekly' => 'performance',
     'unsettled' => 'recon', 'unmatched' => 'monitoring', 'monitoring' => 'monitoring',
+    'belum_selesai' => 'monitoring', 'belum_cair' => 'monitoring',
     'missing_cost' => 'costs', 'cost_check' => 'costs',
     'expenses' => 'expenses',
     'refunds' => 'refunds', 'refund_product' => 'refunds',
@@ -134,20 +135,46 @@ switch ($report) {
     case 'monitoring':
         $rows = Reports::dataMonitor();
         csvOut("monitoring_kelengkapan_{$stamp}.csv", [
-            'Bulan', 'Pesanan', 'Settlement', 'Pesanan Settle', 'Belum Ada Data Pesanan',
-            'Alokasi Produk %', 'Nilai Belum Teralokasi', 'Produk Terjual', 'Produk Tanpa HPP',
-            'Beban Operasional', 'Pesanan Diperbarui', 'Settlement Diperbarui',
-        ], array_map(static function (array $b): array {
-            $alok = $b['settle_pesanan'] > 0
-                ? round(($b['settle_pesanan'] - $b['settle_tanpa_order']) / $b['settle_pesanan'] * 100, 2)
-                : '';
-            return [
-                $b['ym'], $b['pesanan'], $b['settlement'], $b['settle_pesanan'],
-                $b['settle_tanpa_order'], $alok, round($b['nilai_tanpa_order'], 2),
-                $b['produk'], $b['produk_tanpa_hpp'], round($b['beban'], 2),
-                $b['pesanan_update'], $b['settlement_update'],
-            ];
-        }, $rows));
+            'Bulan Pesanan', 'Pesanan', 'Selesai', 'Retur/Batal', 'Belum Selesai',
+            'Nilai Belum Selesai', 'Dana Belum Cair', 'Nilai Belum Cair', 'Belum Bisa Dinilai',
+            'Cair Tanpa Data Pesanan', 'Nilai Cair Tanpa Data Pesanan',
+            'Produk Terjual', 'Produk Tanpa HPP', 'Beban Operasional',
+            'Pesanan Diperbarui', 'Settlement Diperbarui',
+        ], array_map(static fn(array $b): array => [
+            $b['ym'], $b['pesanan'], $b['selesai'], $b['retur_batal'], $b['pending'],
+            round($b['nilai_pending'], 2), $b['belum_cair'], round($b['nilai_belum_cair'], 2),
+            $b['belum_dinilai'], $b['tanpa_pesanan'], round($b['nilai_tanpa_pesanan'], 2),
+            $b['produk'], $b['produk_tanpa_hpp'], round($b['beban'], 2),
+            $b['pesanan_update'], $b['settlement_update'],
+        ], $rows));
+
+    case 'belum_selesai':
+        $ym = q('ym');
+        if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
+            $ym = null;
+        }
+        csvOut("pesanan_belum_selesai_{$stamp}.csv",
+            ['Platform', 'No Pesanan', 'Tanggal Pesanan', 'Umur Hari', 'Nilai', 'Status'],
+            array_map(static fn($r) => [
+                $r['platform'], $r['order_id'], $r['order_date'], $r['umur'],
+                $r['nilai'], $r['status_raw'] ?: $r['status_norm'],
+            ], Reports::pesananBelumSelesai($ym, 100000))
+        );
+
+    case 'belum_cair':
+        $ym = q('ym');
+        if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
+            $ym = null;
+        }
+        $hari = (int) (q('hari') ?? 7);
+        csvOut("pesanan_dana_belum_cair_{$stamp}.csv",
+            ['Platform', 'No Pesanan', 'Tanggal Pesanan', 'Tanggal Selesai', 'Menunggu Hari',
+             'Nilai', 'Status'],
+            array_map(static fn($r) => [
+                $r['platform'], $r['order_id'], $r['order_date'], $r['tgl_selesai'],
+                $r['umur'], $r['nilai'], $r['status_raw'],
+            ], Reports::danaBelumDilepasRinci($hari, null, 100000, $ym))
+        );
 
     case 'unmatched':
         $ym = q('ym');
