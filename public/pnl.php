@@ -9,7 +9,8 @@ $range = Reports::dataRange();
 [$from, $to] = dateRange();
 $platform = platformFilter();
 
-// PPh e-commerce baru dipungut sejak 1 Agustus 2026. Dengan pilihan ini,
+// PPh e-commerce baru dipungut sejak Tax::PPH_MULAI (1 November 2026, setelah
+// jadwal Agustus ditunda). Dengan pilihan ini,
 // bulan-bulan sebelumnya ikut dikenakan supaya dampaknya bisa diperkirakan
 // lebih dulu - angkanya perkiraan, bukan pajak yang benar-benar dipotong.
 $pphSemua = q('pph') === 'semua';
@@ -56,8 +57,8 @@ $c = Reports::rantaiLaba([
     'hpp'      => $hpp,
     'beban'    => $beban,
     // Nominal PPh dihitung per baris di SQL karena pemungutannya baru mulai
-    // 1 Agustus 2026. Periode sebelum itu menghasilkan 0, dan periode yang
-    // melintasi tanggal tersebut terkena hanya pada bagian setelahnya.
+    // pada Tax::PPH_MULAI. Periode sebelum itu menghasilkan 0, dan periode
+    // yang melintasi tanggal tersebut terkena hanya pada bagian setelahnya.
     'pph_nominal' => $pnl['ringkasan']['pph_nominal'] ?? 0,
 ]);
 

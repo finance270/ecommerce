@@ -38,10 +38,12 @@ declare(strict_types=1);
  *     dan untuk non-PKP tanpa pembagian itu. Diskon yang ditanggung
  *     marketplace maupun ongkos kirim tidak mengurangi dasarnya.
  *
- *     CATATAN LAPANGAN: pada berkas penghasilan Shopee Agustus 2026, pajak
- *     yang benar-benar dipungut = 0,5% x harga produk PERSIS, tanpa dibagi
- *     1,11 - artinya penjualnya diperlakukan sebagai non-PKP. Angka di
- *     aplikasi ini memakai rumus PKP, jadi akan lebih kecil daripada yang
+ *     CATATAN LAPANGAN: pada berkas penghasilan Shopee Agustus 2026 sudah ada
+ *     sepuluh baris yang kena potong, besarnya 0,5% x harga produk PERSIS,
+ *     tanpa dibagi 1,11 - artinya penjualnya diperlakukan sebagai non-PKP.
+ *     Jumlahnya kecil (Rp 12.827) dan muncul sebelum tanggal mulai resmi di
+ *     bawah, jadi kemungkinan besar itu pemotongan uji coba platform. Angka
+ *     di aplikasi ini memakai rumus PKP, jadi akan lebih kecil daripada yang
  *     dipotong platform bila status PKP-nya berbeda.
  *   - Dipungut saat pembayaran diterima marketplace, bukan disetor sendiri
  *     oleh penjual seperti sebelumnya.
@@ -52,9 +54,13 @@ declare(strict_types=1);
  *   - Orang pribadi dengan peredaran bruto sampai Rp 500 juta setahun tidak
  *     dipungut, dengan menyampaikan surat pernyataan ke marketplace.
  *   - DJP menunjuk Tokopedia, Shopee, Lazada, dan Blibli sebagai pemungut
- *     pertama, berlaku efektif 1 Agustus 2026.
+ *     pertama. Pemungutannya semula dijadwalkan 1 Agustus 2026, lalu DITUNDA
+ *     dan baru berlaku efektif 1 NOVEMBER 2026 dengan pertimbangan kondisi
+ *     ekonomi dan daya beli. PMK-nya sendiri sudah berlaku sejak 14 Juli 2025;
+ *     yang bergeser hanya saat marketplace mulai memotong.
  *
- * Sumber: PMK 37/2025 dan siaran pers DJP 1 Juli 2026.
+ * Sumber: PMK 37/2025, siaran pers DJP 1 Juli 2026, dan pengumuman penundaan
+ * pemberlakuan menjadi 1 November 2026.
  */
 final class Tax
 {
@@ -64,8 +70,14 @@ final class Tax
     /** Tarif PPh Pasal 22 e-commerce (persen dari peredaran bruto tanpa PPN). */
     public const PPH_PERSEN = 0.5;
 
-    /** Sejak kapan marketplace mulai memungut PPh Pasal 22. */
-    public const PPH_MULAI = '2026-08-01';
+    /**
+     * Sejak kapan marketplace mulai memungut PPh Pasal 22.
+     *
+     * Semula 1 Agustus 2026, ditunda menjadi 1 November 2026. Seluruh laporan
+     * membaca tanggal ini, jadi cukup diubah di sini bila jadwalnya bergeser
+     * lagi - pesanan sebelum tanggal ini otomatis menghasilkan PPh 0.
+     */
+    public const PPH_MULAI = '2026-11-01';
 
     /** Batas peredaran bruto orang pribadi yang tidak dipungut PPh Pasal 22. */
     public const PPH_BEBAS_OMZET = 500_000_000;

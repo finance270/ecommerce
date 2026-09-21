@@ -547,12 +547,12 @@ pedagang dalam negeri:
 | Dipungut oleh | marketplace, saat pembayaran diterima (bukan disetor sendiri seperti dulu) |
 | Sifat | bukan pajak baru dan bukan tambahan beban: jadi pengurang PPh Final terutang, atau kredit pajak di SPT Tahunan |
 | Bebas | orang pribadi dengan peredaran bruto sampai Rp 500 juta setahun, dengan menyampaikan surat pernyataan ke marketplace |
-| Pemungut pertama | Tokopedia, Shopee, Lazada, Blibli — efektif **1 Agustus 2026** |
+| Pemungut pertama | Tokopedia, Shopee, Lazada, Blibli — semula 1 Agustus 2026, **ditunda menjadi 1 November 2026** |
 
 Walau bisa dikreditkan, kasnya tetap keluar lebih dulu sehingga tetap diperhitungkan saat
 menentukan harga. Isi **0** kalau Anda termasuk yang dibebaskan.
 
-> Kalau pesanan acuan **sudah** dipungut PPh oleh marketplace (data setelah Agustus 2026),
+> Kalau pesanan acuan **sudah** dipungut PPh oleh marketplace (data sejak November 2026),
 > nilainya sudah termasuk di biaya platform. Aplikasi mendeteksinya dan menolkan tarif PPh
 > otomatis supaya tidak terhitung dua kali.
 

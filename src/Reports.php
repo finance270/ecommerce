@@ -920,8 +920,8 @@ final class Reports
         $ppn       = "({$setelah} * " . (Tax::PPN_PERSEN / (100 + Tax::PPN_PERSEN)) . ')';
         // PPh e-commerce baru dipungut sejak tanggal berlakunya, jadi
         // syaratnya per baris - bukan satu tarif untuk seluruh rentang.
-        // Laporan yang mencakup Juli dan Agustus sekaligus jadi benar tanpa
-        // perlu dipecah dua.
+        // Laporan yang melintasi tanggal mulai jadi benar tanpa perlu
+        // dipecah dua.
         $pph       = '(' . self::pphSql('st.period_awal',
             "st.gross_amount * {$porsi} - (st.gross_amount + st.total_potongan) * {$porsi} * "
             . (Tax::PPN_PERSEN / (100 + Tax::PPN_PERSEN))) . ')';
