@@ -143,36 +143,37 @@ $kelasMarjin = $marjin === null ? '' : ($marjin < 0 ? 'bad' : ($marjin > 70 ? 'w
 <?php endif; ?>
 
 <?php
-// Rantai nilai: tiap baris diukur terhadap pendapatan kotor supaya terlihat
+// Rantai nilai: tiap baris diukur terhadap penjualan bruto supaya terlihat
 // berapa persen yang benar-benar tersisa jadi laba.
 $kotor = (float) $total['kotor'];
 // Rantai nilai baku - sama persis dengan Laba & Biaya dan simulasi harga.
 $c = Reports::rantaiLaba($total);
 $rantai = [
-    ['Pendapatan kotor',           $c['harga'],            false, '% dari pendapatan kotor'],
-    ['Potongan & diskon',          -$c['potongan'],        true,  '% dari pendapatan kotor'],
-    ['Pendapatan setelah diskon',  $c['setelah_diskon'],   false, 'pendapatan kotor &minus; diskon'],
-    ['Biaya platform',             -$c['biaya'],           true,  '% dari pendapatan kotor'],
-    ['Dana diterima bersih',       $c['dana_diterima'],    false, 'setelah diskon &minus; biaya platform'],
+    ['Penjualan bruto',            $c['harga'],            false, '% dari penjualan bruto'],
+    ['Potongan & diskon',          -$c['potongan'],        true,  '% dari penjualan bruto'],
+    ['Penjualan setelah diskon',   $c['setelah_diskon'],   false, 'penjualan bruto &minus; diskon'],
     ['PPN ' . num($c['ppn_persen'], 0) . '%', -$c['ppn'],  true,
      'terkandung di dalam harga &mdash; dikeluarkan dengan '
      . num($c['ppn_persen'], 0) . '/' . num(100 + $c['ppn_persen'], 0)],
     ['Peredaran bruto tanpa PPN (DPP)', $c['dpp'], false,
-     'kotor <b>sebelum diskon</b> &minus; PPN &mdash; diskon tidak mengurangi dasar ini'],
+     'bruto <b>sebelum diskon</b> &minus; PPN &mdash; diskon tidak mengurangi dasar ini'],
     ['Pajak e-commerce ' . num(Tax::PPH_PERSEN, 1) . '%', -$c['pph'], true,
      (float) $c['pph'] == 0.0
         ? 'belum berlaku pada periode ini &mdash; dipungut sejak ' . date('d/m/Y', strtotime(Tax::PPH_MULAI))
         : num(Tax::PPH_PERSEN, 1) . '% dari DPP, hanya untuk pesanan sejak '
           . date('d/m/Y', strtotime(Tax::PPH_MULAI))],
-    ['Penjualan bersih',           $c['penjualan_bersih'], false, 'dana diterima &minus; PPN &minus; pajak'],
+    ['Penjualan bersih',           $c['penjualan_bersih'], false,
+     'bruto &minus; diskon &minus; PPN &minus; pajak e-commerce'],
+    ['Biaya platform',             -$c['biaya'],           true,  '% dari penjualan bersih'],
     ['HPP',                        -$c['hpp'],             true,  '% dari penjualan bersih'],
-    ['Laba bersih',                $c['laba'],             false, '% dari penjualan bersih'],
+    ['Laba bruto',                 $c['laba_bruto'],       false, 'penjualan bersih &minus; biaya platform &minus; HPP'],
 ];
-// Baris HPP dan laba diukur terhadap penjualan bersih, sisanya terhadap kotor.
-$basisJual = ['HPP', 'Laba bersih'];
+// Baris di bawah penjualan bersih diukur terhadap penjualan bersih, sisanya
+// terhadap penjualan bruto.
+$basisJual = ['Biaya platform', 'HPP', 'Laba bruto'];
 ?>
 <div class="card">
-  <h2>Rincian nilai <span class="muted" style="font-weight:400;font-size:13px">&mdash; persen dihitung terhadap pendapatan kotor</span></h2>
+  <h2>Rincian nilai <span class="muted" style="font-weight:400;font-size:13px">&mdash; persen terhadap penjualan bruto, kecuali baris di bawah penjualan bersih</span></h2>
   <div class="table-wrap">
     <table>
       <thead><tr>
@@ -181,7 +182,7 @@ $basisJual = ['HPP', 'Laba bersih'];
       </tr></thead>
       <tbody>
       <?php foreach ($rantai as [$nama, $nilai, $pengurang, $ket]):
-          $tebal = in_array($nama, ['Dana diterima bersih', 'Penjualan bersih', 'Laba bersih'], true);
+          $tebal = in_array($nama, ['Penjualan setelah diskon', 'Penjualan bersih', 'Laba bruto'], true);
           $qty = (int) $total['qty'];
           // Baris HPP dan laba diukur terhadap penjualan bersih, sisanya kotor.
           $basis = in_array($nama, $basisJual, true) ? $c['penjualan_bersih'] : $c['harga']; ?>

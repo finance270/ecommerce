@@ -34,6 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ? (string) $_POST['role'] : 'staff';
                 $salary   = in_array($_POST['salary_access'] ?? '', ['all', 'only', 'none'], true)
                     ? (string) $_POST['salary_access'] : 'all';
+                $laba     = ($_POST['laba_access'] ?? '') === 'penjualan' ? 'penjualan' : 'all';
 
                 if ($username === '' || preg_match('/^[A-Za-z0-9._-]{3,64}$/', $username) !== 1) {
                     throw new RuntimeException('Username 3-64 karakter, hanya huruf, angka, titik, garis bawah, atau strip.');
@@ -46,12 +47,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 Db::q(
-                    'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access)
-                     VALUES (?,?,?,?,?,?)',
+                    'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access, laba_access)
+                     VALUES (?,?,?,?,?,?,?)',
                     [
                         $username, password_hash($pass, PASSWORD_DEFAULT),
                         $name !== '' ? $name : $username, $role,
-                        json_encode(tabsFromPost()), $salary,
+                        json_encode(tabsFromPost()), $salary, $laba,
                     ]
                 );
                 $notes[] = 'Pengguna ' . $username . ' dibuat.';
@@ -71,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $salary = in_array($_POST['salary_access'] ?? '', ['all', 'only', 'none'], true)
                     ? (string) $_POST['salary_access'] : (string) $target['salary_access'];
+                $laba = ($_POST['laba_access'] ?? '') === 'penjualan' ? 'penjualan' : 'all';
                 $aktif = isset($_POST['is_active']) ? 1 : 0;
 
                 // Jangan sampai admin terakhir dinonaktifkan atau diturunkan.
@@ -84,10 +86,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 Db::q(
-                    'UPDATE users SET full_name=?, role=?, permissions=?, salary_access=?, is_active=? WHERE id=?',
+                    'UPDATE users SET full_name=?, role=?, permissions=?, salary_access=?, laba_access=?, is_active=? WHERE id=?',
                     [
                         trim((string) ($_POST['full_name'] ?? '')) ?: $target['username'],
-                        $role, json_encode(tabsFromPost()), $salary, $aktif, $id,
+                        $role, json_encode(tabsFromPost()), $salary, $laba, $aktif, $id,
                     ]
                 );
 
@@ -216,7 +218,7 @@ $tautanDireksi = $asal . $basis . '/direksi.php?db=' . Tenant::kodeAktif();
     <table>
       <thead><tr>
         <th>Username</th><th>Nama</th><th>Peran</th><th>Tab yang boleh dibuka</th>
-        <th>Akses gaji</th><th>Status</th><th>Terakhir masuk</th><th></th>
+        <th>Akses gaji &amp; laba</th><th>Status</th><th>Terakhir masuk</th><th></th>
       </tr></thead>
       <tbody>
       <?php foreach ($users as $u): $t = tabsOf($u); ?>
@@ -240,6 +242,9 @@ $tautanDireksi = $asal . $basis . '/direksi.php?db=' . Tenant::kodeAktif();
             <span class="badge <?= $sa === 'all' ? 'muted' : ($sa === 'only' ? 'info' : 'warn') ?>">
               <?= e(Perm::accessLabel($sa)) ?>
             </span>
+            <?php if ($u['role'] !== 'admin' && ($u['laba_access'] ?? 'all') === 'penjualan'): ?>
+              <span class="badge warn">sampai penjualan bersih</span>
+            <?php endif; ?>
           </td>
           <td><span class="badge <?= $u['is_active'] ? 'ok' : 'bad' ?>"><?= $u['is_active'] ? 'aktif' : 'nonaktif' ?></span></td>
           <td class="nowrap muted"><?= $u['last_login_at'] !== null ? e(date('d/m/Y H:i', strtotime((string) $u['last_login_at']))) : '-' ?></td>
@@ -300,6 +305,21 @@ $tautanDireksi = $asal . $basis . '/direksi.php?db=' . Tenant::kodeAktif();
             </option>
           <?php endforeach; ?>
         </select>
+      </div>
+      <div class="field">
+        <label>Akses laba</label>
+        <select name="laba_access">
+          <option value="all" <?= ($edit['laba_access'] ?? 'all') !== 'penjualan' ? 'selected' : '' ?>>
+            Seluruh rantai sampai laba bersih
+          </option>
+          <option value="penjualan" <?= ($edit['laba_access'] ?? 'all') === 'penjualan' ? 'selected' : '' ?>>
+            Hanya sampai penjualan bersih
+          </option>
+        </select>
+        <div class="muted" style="font-size:11.5px;margin-top:4px;text-transform:none;letter-spacing:0">
+          Pilihan kedua menyembunyikan biaya platform, HPP, dan seluruh baris laba.
+          Angka penjualan tetap terlihat utuh.
+        </div>
       </div>
       <?php if ($edit !== null): ?>
         <div class="field">

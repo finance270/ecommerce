@@ -9,6 +9,7 @@ final class Perm
     /** kunci tab => [label menu, berkas, keterangan singkat] */
     public const TABS = [
         'dashboard'   => ['Dashboard', 'index.php', 'Ringkasan omzet dan tren penjualan'],
+        'harian'      => ['Harian', 'harian.php', 'Penjualan dan penjualan bersih per hari'],
         'upload'      => ['Upload Data', 'upload.php', 'Mengunggah berkas ekspor Tokopedia/Shopee'],
         'orders'      => ['Pesanan', 'orders.php', 'Daftar & detail pesanan'],
         'products'    => ['Produk', 'products.php', 'Produk terlaris dan varian'],

@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS users (
   --   only = HANYA kategori gaji
   --   none = seluruh kategori KECUALI gaji
   salary_access ENUM('all','only','none') NOT NULL DEFAULT 'all',
+  -- Sampai mana rantai laba boleh dilihat. 'penjualan' berhenti di PENJUALAN
+  -- BERSIH: biaya platform, HPP, dan seluruh baris laba disembunyikan.
+  -- Dipakai untuk akun yang hanya perlu memantau penjualan.
+  laba_access              ENUM('all','penjualan') NOT NULL DEFAULT 'all',
   is_active     TINYINT(1)   NOT NULL DEFAULT 1,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at DATETIME     NULL,

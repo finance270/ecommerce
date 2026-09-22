@@ -20,6 +20,14 @@ if (!Auth::can('pnl')) {
     echo '<p class="muted">Akun Anda tidak berhak membuka bagian ini.</p>';
     exit;
 }
+// Tabel ini seluruhnya tentang biaya dan laba, jadi ikut aturan akses yang
+// sama dengan halaman induknya - diperiksa di sini juga karena potongan ini
+// bisa diminta langsung lewat alamatnya sendiri.
+if (!Auth::bolehLaba()) {
+    http_response_code(403);
+    echo '<p class="muted">Akun Anda hanya berhak melihat sampai penjualan bersih.</p>';
+    exit;
+}
 
 @set_time_limit(300);
 header('Content-Type: text/html; charset=UTF-8');
@@ -93,10 +101,10 @@ if ($section === 'produk') {
     <p class="help" style="margin-top:-4px;margin-bottom:10px">
       <span class="no-print">Rantai nilainya sama dengan
       <a href="simulasi.php" target="_blank" rel="noopener">Simulasi Harga</a>:</span>
-      kotor &minus; diskon &minus; biaya platform = <b>bersih</b> (dana diterima),
-      lalu dikurangi <b>PPN <?= number_format(Tax::PPN_PERSEN, 0, ',', '.') ?>%</b> dan
-      <b>PPh <?= number_format(Tax::PPH_PERSEN, 1, ',', '.') ?>%</b> menjadi <b>penjualan bersih</b>,
-      baru dikurangi HPP. Marjin dihitung dari penjualan bersih.
+      bruto &minus; diskon &minus; <b>PPN <?= number_format(Tax::PPN_PERSEN, 0, ',', '.') ?>%</b>
+      &minus; <b>PPh <?= number_format(Tax::PPH_PERSEN, 1, ',', '.') ?>%</b> =
+      <b>penjualan bersih</b>, baru dikurangi biaya platform dan HPP menjadi laba.
+      Marjin dihitung dari penjualan bersih.
       Kedua pajak dihitung dari nilai <i>setelah diskon</i>; pajak e-commerce hanya dikenakan
       pada pesanan sejak <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>.
     </p>
@@ -105,12 +113,11 @@ if ($section === 'produk') {
         <thead><tr>
           <th>#</th><th>Produk</th><th>Platform</th>
           <th class="num">Qty</th>
-          <th class="num">Kotor</th><th class="num">Diskon &amp; voucher</th>
-          <th class="num">Biaya platform</th>
-          <th class="num" title="Dana yang diterima dari platform, sebelum pajak">Bersih</th>
+          <th class="num">Bruto</th><th class="num">Diskon &amp; voucher</th>
           <th class="num">PPN <?= number_format(Tax::PPN_PERSEN, 0, ',', '.') ?>%</th>
           <th class="num">PPh <?= number_format(Tax::PPH_PERSEN, 1, ',', '.') ?>%</th>
-          <th class="num" title="Bersih setelah dikurangi PPN dan PPh">Penjualan bersih</th>
+          <th class="num" title="Bruto dikurangi diskon, PPN, dan pajak e-commerce">Penjualan bersih</th>
+          <th class="num">Biaya platform</th>
           <th class="num">HPP</th>
           <th class="num">Laba</th><th class="num">Marjin laba</th>
         </tr></thead>
@@ -135,11 +142,10 @@ if ($section === 'produk') {
             <td class="num"><?= num($p['qty']) ?></td>
             <td class="num"><?= rp($p['kotor']) ?></td>
             <td class="num <?= (float) $p['potongan'] < 0 ? 'neg' : 'muted' ?>"><?= rp($p['potongan']) ?></td>
-            <td class="num neg"><?= rp($p['biaya']) ?></td>
-            <td class="num"><?= rp($p['bersih']) ?></td>
             <td class="num neg"><?= rp($p['ppn']) ?></td>
             <td class="num neg"><?= rp($p['pph']) ?></td>
-            <td class="num"><?= rp($p['penjualan']) ?></td>
+            <td class="num"><b><?= rp($p['penjualan']) ?></b></td>
+            <td class="num neg"><?= rp($p['biaya']) ?></td>
             <td class="num <?= $noHpp ? 'warn' : 'neg' ?>" <?= $noHpp ? 'title="Sebagian atau seluruh unit belum punya HPP"' : '' ?>>
               <?= (float) $p['hpp'] == 0.0 && $noHpp ? '<span class="badge warn">belum ada</span>' : rp(-(float) $p['hpp']) ?>
             </td>
@@ -150,7 +156,7 @@ if ($section === 'produk') {
           </tr>
         <?php endforeach; ?>
         <?php if ($produk === []): ?>
-          <tr><td colspan="14" class="muted">
+          <tr><td colspan="13" class="muted">
             Belum bisa dihitung. Perlu berkas pesanan <i>dan</i> berkas laporan penghasilan
             untuk periode yang sama.
           </td></tr>
@@ -162,11 +168,10 @@ if ($section === 'produk') {
           <td class="num"><?= num($pt['qty']) ?></td>
           <td class="num"><?= rp($pt['kotor']) ?></td>
           <td class="num neg"><?= rp($pt['potongan']) ?></td>
-          <td class="num neg"><?= rp($pt['biaya']) ?></td>
-          <td class="num"><?= rp($pt['bersih']) ?></td>
           <td class="num neg"><?= rp($pt['ppn']) ?></td>
           <td class="num neg"><?= rp($pt['pph']) ?></td>
-          <td class="num"><?= rp($pt['penjualan']) ?></td>
+          <td class="num"><b><?= rp($pt['penjualan']) ?></b></td>
+          <td class="num neg"><?= rp($pt['biaya']) ?></td>
           <td class="num neg"><?= rp(-$pt['hpp']) ?></td>
           <td class="num <?= $pt['laba'] < 0 ? 'neg' : 'pos' ?>"><?= rp($pt['laba']) ?></td>
           <td class="num"><?= $pt['penjualan'] > 0

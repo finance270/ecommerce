@@ -221,6 +221,26 @@ final class Auth
         return self::isAdmin();
     }
 
+    /**
+     * Apakah akun ini boleh melihat rantai di BAWAH penjualan bersih -
+     * biaya platform, HPP, laba bruto, beban operasional, dan laba bersih.
+     *
+     * Akun yang tidak boleh tetap melihat seluruh angka penjualan: bruto,
+     * diskon, PPN, pajak e-commerce, dan penjualan bersih. Yang disembunyikan
+     * hanya yang menyangkut biaya dan laba.
+     */
+    public static function bolehLaba(): bool
+    {
+        $u = self::user();
+        if ($u === null) {
+            return false;
+        }
+        if (($u['role'] ?? '') === 'admin') {
+            return true;
+        }
+        return (string) ($u['laba_access'] ?? 'all') !== 'penjualan';
+    }
+
     /** 'all' | 'only' (hanya gaji) | 'none' (tanpa gaji) */
     public static function salaryAccess(): string
     {

@@ -147,6 +147,8 @@ function runMigrations(PDO $pdo, string $dbName): array
          "ALTER TABLE users ADD COLUMN permissions TEXT NULL AFTER role"],
         ['users', 'salary_access',
          "ALTER TABLE users ADD COLUMN salary_access ENUM('all','only','none') NOT NULL DEFAULT 'all' AFTER permissions"],
+        ['users', 'laba_access',
+         "ALTER TABLE users ADD COLUMN laba_access ENUM('all','penjualan') NOT NULL DEFAULT 'all' AFTER salary_access"],
         ['settlements', 'ord_date',
          "ALTER TABLE settlements ADD COLUMN ord_date DATE NULL AFTER settlement_date"],
         ['settlements', 'ord_status',
@@ -185,6 +187,21 @@ function runMigrations(PDO $pdo, string $dbName): array
         if ($exists === 0) {
             $pdo->exec($sql);
             $done[] = "{$table}.{$column}";
+
+            // Sekali saja, saat kolomnya baru dibuat: akun bernama "anomali"
+            // memang diminta hanya sampai penjualan bersih. Dijalankan di sini
+            // supaya tidak perlu diatur manual setelah pembaruan, dan tidak
+            // akan mengubah apa pun lagi sesudahnya - perubahan berikutnya
+            // sepenuhnya lewat menu Pengguna.
+            if ($table === 'users' && $column === 'laba_access') {
+                $n = $pdo->exec(
+                    "UPDATE users SET laba_access = 'penjualan'
+                      WHERE username = 'anomali' AND role <> 'admin'"
+                );
+                if ((int) $n > 0) {
+                    $done[] = 'akses laba akun "anomali" dibatasi sampai penjualan bersih';
+                }
+            }
         }
     }
 

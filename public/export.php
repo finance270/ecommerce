@@ -39,7 +39,7 @@ $tabLaporan = [
     'orders' => 'orders', 'settlements' => 'settlements',
     'fee_detail' => 'pnl', 'fee_category' => 'pnl', 'monthly_settlement' => 'pnl',
     'product_net' => 'pnl', 'product_profit' => 'pnl',
-    'products' => 'products', 'weekly' => 'performance',
+    'products' => 'products', 'weekly' => 'performance', 'harian' => 'harian',
     'unsettled' => 'recon', 'monitoring' => 'monitoring',
     'belum_selesai' => 'monitoring', 'belum_cair' => 'monitoring',
     'missing_cost' => 'costs', 'cost_check' => 'costs',
@@ -50,6 +50,18 @@ if (!isset($tabLaporan[$report]) || !Auth::can($tabLaporan[$report])) {
     http_response_code(403);
     header('Content-Type: text/plain; charset=UTF-8');
     echo 'Akun Anda tidak berhak mengunduh laporan ini.';
+    exit;
+}
+
+// Laporan yang memuat biaya platform, HPP, atau laba. Tabnya boleh dibuka,
+// tetapi isinya tetap tertutup bagi akun yang hanya berhak sampai penjualan
+// bersih - kalau tidak, ekspor jadi jalan pintas melewati batas itu.
+$butuhLaba = ['fee_detail', 'fee_category', 'monthly_settlement',
+              'product_net', 'product_profit'];
+if (in_array($report, $butuhLaba, true) && !Auth::bolehLaba()) {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Akun Anda hanya berhak melihat sampai penjualan bersih.';
     exit;
 }
 
@@ -131,6 +143,28 @@ switch ($report) {
                 $r['total'],
             ], $pnl['kategori'])
         );
+
+    case 'harian':
+        $hari = (int) (q('hari') ?? 30);
+        if (!in_array($hari, [7, 14, 30, 60, 90], true)) {
+            $hari = 30;
+        }
+        $rg  = Reports::dataRange();
+        $akh = (string) ($rg['order_to'] ?? date('Y-m-d'));
+        $awl = date('Y-m-d', strtotime($akh . ' -' . ($hari - 1) . ' day') ?: time());
+        csvOut("penjualan_harian_{$stamp}.csv", [
+            'Tanggal', 'Hari', 'Pesanan', 'Selesai', 'Belum Selesai', 'Batal/Retur', 'Qty',
+            'Penjualan Bruto', 'Diskon', 'PPN', 'Pajak E-commerce', 'Penjualan Bersih',
+        ], array_map(static function (array $r) {
+            $diskon = (float) $r['bruto'] - (float) $r['setelah_diskon'];
+            $bersih = (float) $r['setelah_diskon'] - (float) $r['ppn'] - (float) $r['pph'];
+            return [
+                $r['tanggal'], hariIndo((string) $r['tanggal']), $r['pesanan'], $r['selesai'],
+                $r['proses'], $r['batal'], $r['qty'],
+                round((float) $r['bruto'], 2), round($diskon, 2),
+                round((float) $r['ppn'], 2), round((float) $r['pph'], 2), round($bersih, 2),
+            ];
+        }, Reports::penjualanHarian($awl, $akh, $platform)));
 
     case 'monitoring':
         $rows = Reports::dataMonitor();

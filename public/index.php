@@ -81,16 +81,18 @@ render_head('Dashboard', 'dashboard');
     <div class="value"><?= rp($settle['pendapatan_kotor'] ?? 0, true) ?></div>
     <div class="hint"><?= num($settle['total_trx'] ?? 0) ?> transaksi settle</div>
   </div>
+  <?php if (Auth::bolehLaba()): ?>
   <div class="kpi bad">
     <div class="label">Total biaya platform</div>
     <div class="value"><?= rp($settle['total_biaya'] ?? 0, true) ?></div>
-    <div class="hint"><?= pct(abs((float) ($settle['total_biaya'] ?? 0)), (float) ($settle['pendapatan_kotor'] ?? 0)) ?> dari pendapatan kotor</div>
+    <div class="hint"><?= pct(abs((float) ($settle['total_biaya'] ?? 0)), (float) ($settle['pendapatan_kotor'] ?? 0)) ?> dari penjualan bruto</div>
   </div>
   <div class="kpi ok">
     <div class="label">Dana diterima bersih</div>
     <div class="value"><?= rp($settle['dana_diterima'] ?? 0, true) ?></div>
     <div class="hint">yang benar-benar masuk ke saldo</div>
   </div>
+  <?php endif; ?>
   <div class="kpi">
     <div class="label">Pengembalian dana</div>
     <div class="value"><?= rp(abs((float) ($settle['pengembalian'] ?? 0)), true) ?></div>

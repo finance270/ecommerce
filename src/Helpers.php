@@ -56,6 +56,17 @@ function shortDate(?string $d): string
     return date('j', $ts) . ' ' . $bulan[(int) date('n', $ts)] . ' ' . date('Y', $ts);
 }
 
+/** Nama hari dalam bahasa Indonesia, untuk rekap harian. */
+function hariIndo(?string $d): string
+{
+    $ts = $d === null || $d === '' ? false : strtotime($d);
+    if ($ts === false) {
+        return '';
+    }
+    static $hari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    return $hari[(int) date('w', $ts)];
+}
+
 function humanBytes(int $b): string
 {
     $u = ['B', 'KB', 'MB', 'GB'];

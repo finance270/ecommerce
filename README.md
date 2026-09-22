@@ -237,6 +237,7 @@ akan **0**.
 | Halaman | Kegunaan |
 | --- | --- |
 | **Dashboard** | Omzet, pesanan, rata-rata per pesanan, tingkat pembatalan, dana diterima, tren harian |
+| **Harian** | Penjualan dan penjualan bersih **per hari**, langsung dari berkas pesanan — yang paling cepat terbarui |
 | **Upload Data** | Unggah berkas + laporan hasil import per sheet |
 | **Pesanan** | Cari/filter seluruh pesanan, buka detail per pesanan |
 | **Produk** | Produk & varian terlaris, qty terjual, omzet, retur |
@@ -317,13 +318,19 @@ Tabelnya memakai rantai nilai yang **sama persis** dengan halaman Simulasi Harga
 angka di laporan dan di simulasi bisa dibandingkan langsung:
 
 ```
-kotor − diskon & voucher − biaya platform = bersih (dana diterima)
-bersih − PPN 11% − PPh 0,5%               = penjualan bersih
-penjualan bersih − HPP                    = laba
-marjin laba                               = laba ÷ penjualan bersih
+penjualan bruto − diskon & voucher − PPN 11% − PPh 0,5% = PENJUALAN BERSIH
+penjualan bersih − biaya platform − HPP                 = laba bruto
+laba bruto − beban operasional                          = laba bersih
+marjin laba                                             = laba ÷ penjualan bersih
 ```
 
 Kedua pajak dihitung dari nilai **setelah diskon**, bukan dari harga terdaftar.
+
+Urutannya mengikuti laporan laba rugi pada umumnya: yang dikurangkan **di atas** penjualan bersih
+hanyalah yang memang bukan pendapatan penjual — diskon yang Anda tanggung sendiri, serta PPN dan
+PPh yang cuma dititipkan untuk disetor ke negara. **Biaya platform ada di bawahnya**, bersama HPP,
+karena itu biaya menjual. *Dana diterima bersih* tetap ditampilkan sebagai keterangan — itulah uang
+yang benar-benar ditransfer platform — tetapi bukan bagian dari rantai menuju laba.
 
 Pengurutannya dibagi dua kelompok: *terbaik di atas* (laba tertinggi, marjin terbaik, bersih
 tertinggi, kotor tertinggi, terjual terbanyak) dan *yang perlu diperiksa di atas* (laba
@@ -386,6 +393,45 @@ lainnya, dicatat per bulan. Kategori bebas Anda tentukan sendiri. Baris dikunci 
 
 Keduanya menerima **.xlsx maupun .csv** (pemisah `;` atau `,`), dan angka boleh ditulis dengan
 titik ribuan seperti `17.500.000`.
+
+### Penjualan harian
+
+Menu **Harian** menjawab "berapa penjualan hari ini" tanpa menunggu dana cair. Sumbernya **berkas
+pesanan**, bukan berkas penghasilan: berkas pesanan bisa diunduh hari itu juga, sedangkan dana baru
+cair sekitar seminggu kemudian — kalau menunggu settlement, halaman ini akan selalu tertinggal
+seminggu dan kehilangan gunanya.
+
+Konsekuensinya rantai di sini **berhenti di penjualan bersih**:
+
+```
+penjualan bruto − diskon − PPN 11% − PPh 0,5% = penjualan bersih
+```
+
+Biaya platform baru diketahui saat dana cair, jadi **laba harian sengaja tidak ditampilkan** —
+angkanya belum bisa dipertanggungjawabkan. Untuk itu ada menu Laba & Biaya.
+
+Isinya: KPI hari terakhir, 7 hari, 30 hari, dan rentang terpilih; lalu tabel per hari dengan jumlah
+pesanan (selesai / belum selesai / batal), qty, bruto, diskon, PPN, pajak e-commerce, dan penjualan
+bersih. Rentangnya bisa dipilih 7–90 hari dan disaring per platform, dan seluruhnya bisa diekspor
+CSV. Sama seperti Laba & Biaya, hanya pesanan berstatus **selesai** yang dihitung sebagai penjualan.
+
+> Rentangnya dihitung mundur dari **tanggal data terakhir**, bukan dari hari ini — data diunggah
+> manual, jadi "hari ini" sering memang belum ada isinya. Kalau berkas terakhir sudah lebih dari
+> sehari, halaman ini memberi tahu umurnya.
+
+### Akses laba per pengguna
+
+Selain hak per tab dan akses kategori gaji, tiap akun punya **akses laba**:
+
+| Pilihan | Yang terlihat |
+| --- | --- |
+| Seluruh rantai sampai laba bersih | semuanya (nilai awal) |
+| Hanya sampai penjualan bersih | penjualan bruto, diskon, PPN, pajak e-commerce, dan penjualan bersih |
+
+Pilihan kedua menyembunyikan **biaya platform, HPP, laba bruto, beban operasional, dan laba
+bersih** — termasuk tabel laba per produk, jembatan angka per platform, struktur biaya, dan
+kolom biaya pada rekap bulanan. Ekspor CSV yang memuat angka-angka itu ikut ditolak, supaya
+ekspor tidak jadi jalan pintas melewati batas tersebut. Diatur di menu **Pengguna**.
 
 ### Monitoring kelengkapan data
 

@@ -29,17 +29,18 @@ final class Reports
     /**
      * Penjualan bersih - dasar penyebut seluruh persentase marjin.
      *
-     *     penjualan bersih = pendapatan kotor - potongan & diskon
+     *     penjualan bersih = penjualan bruto - diskon - PPN - pajak e-commerce
      *
-     * Pendapatan kotor di aplikasi ini sudah bersih dari pengembalian dana
-     * (lihat const KOTOR), jadi yang tersisa dikurangkan hanyalah potongan
-     * dan diskon yang ditanggung penjual.
+     * Penjualan bruto di aplikasi ini sudah bersih dari pengembalian dana
+     * (lihat const KOTOR). Yang dikurangkan sesudahnya hanyalah hal-hal yang
+     * memang BUKAN pendapatan penjual: diskon yang ditanggung sendiri, lalu
+     * PPN dan PPh yang cuma dititipkan untuk disetor ke negara.
      *
      * Biaya platform (komisi, layanan, ongkir) SENGAJA tidak dikurangkan di
-     * sini: itu biaya menjual, bukan pengurang penjualan. Marjin karena itu
-     * berarti "berapa persen dari penjualan bersih yang benar-benar jadi
-     * laba", ukuran yang sama dengan yang dipakai di laporan laba rugi pada
-     * umumnya.
+     * sini: itu biaya menjual, bukan pengurang penjualan - tempatnya di bawah
+     * penjualan bersih, bersama HPP. Marjin karena itu berarti "berapa persen
+     * dari penjualan bersih yang benar-benar jadi laba", ukuran yang sama
+     * dengan laporan laba rugi pada umumnya.
      *
      * @param array{kotor?:mixed,potongan?:mixed} $r baris hasil query
      */
@@ -53,23 +54,32 @@ final class Reports
      * halaman Laba & Biaya dan simulasi harga supaya keduanya tidak pernah
      * berbeda urutan maupun dasar hitungnya.
      *
-     *   harga jual terdaftar
+     *   penjualan bruto (harga jual terdaftar)
      * - pengembalian dana (bila ada)
      * - potongan & diskon ditanggung penjual
-     * = harga setelah dikurang diskon        <- dasar hitung pajak
+     * = penjualan setelah diskon             <- dasar hitung PPN
+     * - PPN              (persen x nilai setelah diskon)
+     * - pajak e-commerce (persen x DPP sebelum diskon)
+     * = PENJUALAN BERSIH                     <- dasar hitung seluruh marjin
      * - biaya platform (+ penyesuaian/selisih)
-     * = dana diterima bersih
-     * - PPN            (persen x harga setelah diskon)
-     * - pajak e-commerce (persen x harga setelah diskon)
-     * = penjualan bersih                      <- dasar hitung seluruh marjin
      * - HPP
-     * = laba kotor
+     * = laba bruto
      * - beban operasional (bila ada)
-     * = laba usaha
+     * = laba bersih
      *
-     * Persentase tiap baris diukur terhadap harga jual, KECUALI HPP dan laba
-     * yang diukur terhadap penjualan bersih - itulah dasar yang bermakna
-     * untuk keduanya.
+     * Urutannya disusun seperti laporan laba rugi pada umumnya: yang
+     * dikurangkan di ATAS penjualan bersih hanyalah yang memang bukan
+     * pendapatan penjual - diskon yang ditanggung sendiri, serta PPN dan PPh
+     * yang hanya dititipkan untuk disetor. Biaya platform ada DI BAWAHNYA
+     * bersama HPP, karena itu biaya menjual, bukan pengurang penjualan.
+     *
+     * "Dana diterima bersih" tetap dihitung sebagai keterangan - itulah uang
+     * yang benar-benar ditransfer platform - tetapi bukan lagi bagian dari
+     * rantai menuju laba.
+     *
+     * Persentase tiap baris diukur terhadap penjualan bruto, KECUALI biaya
+     * platform, HPP, dan laba yang diukur terhadap penjualan bersih - itulah
+     * dasar yang bermakna untuk ketiganya.
      *
      * @param array $r butuh: kotor, potongan; opsional: biaya, lain, hpp
      */
@@ -117,7 +127,9 @@ final class Reports
         $nilaiPph = array_key_exists('pph_nominal', $r)
             ? abs((float) $r['pph_nominal'])
             : $dpp * $pph / 100;
-        $penjualan = $danaDiterima - $nilaiPpn - $nilaiPph;
+        // Penjualan bersih: bruto dikurangi diskon dan kedua pajak. Biaya
+        // platform belum masuk di sini - tempatnya satu tingkat di bawah.
+        $penjualan = $setelahDiskon - $nilaiPpn - $nilaiPph;
         // Persentase yang ditampilkan mengikuti nominal yang benar-benar
         // dipakai, supaya keterangan tarif tidak bertentangan dengan angkanya.
         if (array_key_exists('pph_nominal', $r)) {
@@ -125,7 +137,10 @@ final class Reports
             $pph = $dpp > 0 ? $nilaiPph / $dpp * 100 : 0.0;
         }
 
-        $labaKotor = $penjualan - $hpp;
+        // Selisih pencatatan platform (penyesuaian, pembulatan) ikut di sini
+        // supaya laba tetap bertemu dengan uang yang benar-benar diterima.
+        $biayaJual = $setelahDiskon - $danaDiterima;
+        $labaBruto = $penjualan - $biayaJual - $hpp;
 
         return [
             'harga'            => $harga,
@@ -134,16 +149,19 @@ final class Reports
             'setelah_diskon'   => $setelahDiskon,
             'biaya'            => $biaya,
             'lain'             => $lain,
+            'biaya_jual'       => $biayaJual,
             'dana_diterima'    => $danaDiterima,
             'ppn'              => $nilaiPpn,
             'pph'              => $nilaiPph,
             'penjualan_bersih' => $penjualan,
             'hpp'              => $hpp,
-            'laba'             => $labaKotor,
+            'laba'             => $labaBruto,
+            'laba_bruto'       => $labaBruto,
             'beban'            => $beban,
-            'laba_usaha'       => $labaKotor - $beban,
-            'marjin'           => $penjualan > 0 ? $labaKotor / $penjualan * 100 : null,
-            'marjin_usaha'     => $penjualan > 0 ? ($labaKotor - $beban) / $penjualan * 100 : null,
+            'laba_usaha'       => $labaBruto - $beban,
+            'laba_bersih'      => $labaBruto - $beban,
+            'marjin'           => $penjualan > 0 ? $labaBruto / $penjualan * 100 : null,
+            'marjin_usaha'     => $penjualan > 0 ? ($labaBruto - $beban) / $penjualan * 100 : null,
             'dpp'              => $dpp,
             'ppn_persen'       => $ppn,
             'pph_persen'       => $pph,
@@ -255,6 +273,58 @@ final class Reports
             'settlement_from' => $s['a'] ?? null,
             'settlement_to'   => $s['b'] ?? null,
         ];
+    }
+
+    // -----------------------------------------------------------------
+    // Penjualan harian
+    // -----------------------------------------------------------------
+
+    /**
+     * Penjualan per HARI, dari sisi pesanan.
+     *
+     * Sengaja bersumber dari tabel PESANAN, bukan settlement: berkas pesanan
+     * bisa diunduh hari itu juga, sedangkan dana baru cair sekitar seminggu
+     * kemudian. Halaman harian gunanya melihat penjualan selagi masih hangat,
+     * jadi menunggu settlement membuatnya selalu tertinggal seminggu.
+     *
+     * Konsekuensinya angka di sini adalah nilai pesanan menurut berkas
+     * pesanan - biaya platform belum diketahui, jadi rantainya berhenti di
+     * PENJUALAN BERSIH. Laba harian tidak bisa dijanjikan dari data ini, dan
+     * memang tidak ditampilkan.
+     *
+     * Diskon yang dipakai adalah selisih subtotal sebelum dan sesudah diskon
+     * pada berkas pesanan, sehingga sejalan dengan Laba & Biaya yang memakai
+     * diskon dari berkas penghasilan begitu dananya cair.
+     *
+     * @return array<int,array>
+     */
+    public static function penjualanHarian(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
+        $ppnRasio = Tax::PPN_PERSEN / (100 + Tax::PPN_PERSEN);
+        $pph = self::pphSql('o.order_date', 'o.items_subtotal_before - o.items_subtotal_before * ' . $ppnRasio);
+
+        return Db::all(
+            "SELECT o.order_date AS tanggal,
+                    COUNT(*)                                  AS pesanan,
+                    SUM(o.status_norm = 'selesai')            AS selesai,
+                    SUM(o.status_norm IN ('proses','lainnya')) AS proses,
+                    SUM(o.status_norm IN ('batal','retur'))   AS batal,
+                    COALESCE(SUM(o.total_qty), 0)             AS qty,
+                    COALESCE(SUM(o.items_subtotal_before), 0) AS bruto_semua,
+                    COALESCE(SUM(CASE WHEN o.status_norm = 'selesai'
+                                      THEN o.items_subtotal_before END), 0) AS bruto,
+                    COALESCE(SUM(CASE WHEN o.status_norm = 'selesai'
+                                      THEN o.items_subtotal_after END), 0)  AS setelah_diskon,
+                    COALESCE(SUM(CASE WHEN o.status_norm = 'selesai'
+                                      THEN o.items_subtotal_after END), 0) * {$ppnRasio} AS ppn,
+                    COALESCE({$pph}, 0) AS pph
+             FROM orders o
+             WHERE {$w} AND o.order_date IS NOT NULL
+             GROUP BY o.order_date
+             ORDER BY o.order_date DESC",
+            $a
+        );
     }
 
     // -----------------------------------------------------------------
@@ -906,8 +976,14 @@ final class Reports
         $pph       = '(' . self::pphSql('st.period_awal',
             "st.gross_amount * {$porsi} - (st.gross_amount + st.total_potongan) * {$porsi} * "
             . (Tax::PPN_PERSEN / (100 + Tax::PPN_PERSEN))) . ')';
-        $penjualan = "({$dana} - {$ppn} - {$pph})";
-        $laba      = "({$penjualan} - {$hpp})";
+        // Penjualan bersih = setelah diskon dikurangi kedua pajak. Biaya
+        // platform ada DI BAWAHNYA, sejalan dengan Reports::rantaiLaba().
+        $penjualan = "({$setelah} - {$ppn} - {$pph})";
+        // Biaya menjual diambil sebagai selisih setelah-diskon dengan dana
+        // yang benar-benar diterima, jadi penyesuaian dan selisih pencatatan
+        // platform ikut terhitung - sama seperti rantaiLaba().
+        $biayaJual = "({$setelah} - {$dana})";
+        $laba      = "({$penjualan} - {$biayaJual} - {$hpp})";
 
         // Hasil pengelompokan dibungkus sekali lagi supaya pengurutan boleh
         // memakai nama kolomnya di dalam ekspresi - MariaDB menolak alias yang
