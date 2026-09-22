@@ -247,7 +247,7 @@ akan **0**.
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
 | **Pengembalian** | Refund per bulan, per produk, dan per transaksi &mdash; laporan tersendiri |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
-| **Monitoring** | Per bulan pesanan: mana yang belum selesai, mana yang dananya belum cair, berkas terakhir diunggah, dan settlement yang berkas pesanannya belum masuk |
+| **Monitoring** | Kelengkapan per bulan pesanan: mana yang belum selesai, mana yang dananya belum cair, HPP, dan beban |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses, dan penghapusan data per bulan (admin) |
 | **Pengguna** | *(admin saja)* Buat akun, atur tab yang boleh dibuka, atur hak atas data gaji, dan ambil **tautan direksi** |
 
@@ -372,35 +372,26 @@ titik ribuan seperti `17.500.000`.
 
 ### Monitoring kelengkapan data
 
-Menu **Monitoring** menjawab pertanyaan "periode mana yang belum saya update":
+Menu **Monitoring** berisi satu tabel saja: **kelengkapan per bulan**, seluruhnya menurut
+**tanggal pesanan**, sama seperti Laba & Biaya.
 
-- **Dana belum dilepas** — dari sisi *pesanan*: mana yang sudah selesai tetapi belum ada
-  catatan pencairannya. Umurnya dihitung sejak **pesanan selesai** (Shopee: *Waktu Pesanan
-  Selesai*, Tokopedia: *Delivered Time*), bukan sejak pesanan dibuat, karena dari situlah
-  hitungan pencairan platform mulai berjalan. Tenggatnya bisa diatur (3&ndash;14 hari,
-  default 7) dan hasilnya dikelompokkan: masih dalam masa pencairan, lewat tenggat, jauh
-  lewat tenggat. Disertai daftar pesanan yang paling lama menunggu.
-  > Penilaian dibatasi pada rentang tanggal yang berkas penghasilannya memang sudah
-  > diunggah. Pesanan di luar rentang itu masuk kelompok **belum bisa dinilai** &mdash;
-  > yang belum ada adalah datanya, bukan dananya. Tanpa pembatasan ini satu bulan yang
-  > berkas Income-nya belum diunggah akan tampak seperti miliaran rupiah tertahan.
-- **Berkas terakhir diunggah** untuk tiap jenis (4 berkas platform + HPP + beban), lengkap
-  dengan umurnya. Lewat seminggu ditandai, lewat dua minggu ditandai lebih keras.
-- **Kelengkapan per bulan** — seluruhnya menurut **tanggal pesanan**, sama seperti Laba &
-  Biaya. Setiap pesanan pasti berakhir *selesai* atau berhenti sebagai *retur/batal*, jadi yang
-  dipantau adalah dua hal yang membuat bulan itu belum bisa dibaca final:
-  **belum selesai** (masih proses &mdash; angkanya masih akan berubah) dan **dana belum cair**
-  (sudah diakui sebagai penjualan, tetapi biaya platform dan laba bersihnya belum diketahui).
-  Angkanya bisa diklik untuk melihat pesanan mana saja. Ditambah kelengkapan HPP dan apakah
-  beban operasional sudah diisi.
-- **Pesanan yang belum selesai** — daftar pesanan yang masih berjalan di platform, bisa
-  disaring per bulan pesanan dan diekspor. Status yang tidak pernah berubah pada bulan yang
-  sudah lama lewat biasanya berarti berkas pesanannya belum diunggah ulang.
-- **Settlement yang belum ada data pesanannya** — kebalikannya: uangnya cair, pesanannya tidak
-  ada di database, sehingga tidak masuk bulan pesanan mana pun dan tidak ikut Laba & Biaya.
-  Bulannya adalah **bulan pencairan**, karena tanggal pesanannya memang belum diketahui.
-  Daftarnya bisa difilter per bulan dan diekspor, jadi Anda tahu persis berkas periode mana
-  yang perlu diunggah.
+Setiap pesanan pasti berakhir *selesai* atau berhenti sebagai *retur/batal*, jadi yang dipantau
+adalah dua hal yang membuat sebuah bulan belum bisa dibaca final:
+
+- **Belum selesai** — masih berjalan di platform. Belum diakui sebagai penjualan, jadi angka
+  bulan itu masih akan berubah. Pada bulan yang sudah lama lewat, status yang tidak pernah
+  berubah biasanya berarti berkas pesanannya belum diunggah ulang setelah pesanan itu tuntas.
+- **Dana belum cair** — sudah selesai dan sudah diakui sebagai penjualan, tetapi belum ada
+  catatan pencairannya, sehingga biaya platform dan laba bersihnya belum diketahui.
+  > Penilaian dibatasi pada rentang tanggal yang berkas penghasilannya memang sudah diunggah.
+  > Pesanan di luar rentang itu ditandai **belum bisa dinilai** — yang belum ada adalah datanya,
+  > bukan dananya. Tanpa pembatasan ini satu bulan yang berkas Income-nya belum diunggah akan
+  > tampak seperti miliaran rupiah tertahan.
+
+Kedua angka itu **bisa diklik**: daftar pesanannya muncul di bawah tabel, khusus bulan yang
+diklik, lengkap dengan nomor pesanan, tanggal, umur, nilai, dan status aslinya di platform —
+dan bisa diekspor CSV. Daftarnya hanya muncul saat diklik, supaya halamannya tetap satu tabel.
+Kolom lain: kelengkapan **HPP** dan apakah **beban operasional** bulan itu sudah diisi.
 
 Persentase kelengkapan dihitung dari **jumlah pesanan**, bukan nilainya, karena nilai pesanan
 retur bisa negatif sehingga persentase berbasis nilai dapat melewati 100% dan membingungkan.
@@ -510,6 +501,15 @@ di sini harga yang muncul akan lebih rendah daripada harga di etalase.
 Persentase pengurangnya diambil dari **pesanan terakhir yang sudah selesai dan lengkap biayanya**.
 Pesanan yang batal atau yang biayanya belum tercatat tidak dipakai, karena tidak mewakili tarif
 apa pun. **HPP** diambil dari **bulan terakhir yang terisi**.
+
+**Produk baru yang belum pernah terjual** juga bisa disimulasikan — buka `simulasi.php?key=baru`
+(tautan **Simulasi harga produk baru** ada di halaman HPP). Produk itu belum punya histori
+sendiri, jadi persentase **potongan** dan **biaya platform**-nya diambil dari **rata-rata toko
+Anda** selama enam bulan terakhir, per platform maupun gabungan, dan bisa dipilih dengan tombol
+**Pakai ini**. Harga jual dan HPP sengaja dikosongkan — keduanya memang belum ada, dan itulah
+yang sedang dicari: isi **HPP per unit**, lalu isi **marjin** yang ditargetkan untuk mendapat
+harga jualnya, atau isi **harga jual** yang direncanakan untuk melihat marjinnya. Nama produk
+boleh diisi supaya hasil cetaknya berjudul.
 
 Histori terakhir **tiap platform** ditampilkan berdampingan — nomor pesanan, tanggal, harga jual
 per unit, persentase potongan, dan persentase biaya platform. Bila platform dibiarkan "Semua

@@ -9,12 +9,22 @@ require_once __DIR__ . '/_layout.php';
  * Halaman berdiri sendiri - dibuka di tab baru dari uji kewajaran HPP - supaya
  * bisa dipakai fokus dan dicetak apa adanya jadi PDF.
  *
- * Dasarnya adalah PESANAN TERAKHIR yang sudah selesai dan lengkap biayanya.
- * Histori terakhir tiap platform ditampilkan berdampingan; bila pengguna belum
- * memilih platform, yang dipakai adalah yang HARGA JUALNYA PALING TINGGI.
- * HPP diambil dari bulan terakhir yang ada isinya. Semuanya hanya nilai awal -
- * seluruh angka bisa diubah manual, dan tombol Reset mengembalikannya ke
- * histori terakhir.
+ * Ada dua cara memakainya:
+ *
+ *   PRODUK YANG SUDAH TERJUAL (?key=...)
+ *   Dasarnya PESANAN TERAKHIR yang sudah selesai dan lengkap biayanya.
+ *   Histori terakhir tiap platform ditampilkan berdampingan; bila pengguna
+ *   belum memilih platform, yang dipakai adalah yang HARGA JUALNYA PALING
+ *   TINGGI. HPP diambil dari bulan terakhir yang ada isinya.
+ *
+ *   PRODUK BARU (tanpa ?key=, atau ?key=baru)
+ *   Produk yang belum pernah terjual tidak punya histori sendiri, jadi tarif
+ *   potongan dan biaya platformnya diambil dari RATA-RATA TOKO beberapa bulan
+ *   terakhir (Reports::tarifRata). Harga dan HPP dikosongkan - keduanya
+ *   memang belum ada, dan itulah yang sedang dicari.
+ *
+ * Keduanya sama-sama hanya nilai awal: seluruh angka bisa diubah manual, dan
+ * tombol Reset mengembalikannya.
  *
  * Seluruh persentase marjin memakai penyebut PENJUALAN BERSIH, yaitu harga
  * jual dikurangi pajak, pengembalian, dan potongan/diskon - lihat
@@ -26,7 +36,8 @@ Auth::requireTab('costs');
 @set_time_limit(300);
 
 $key = (string) (q('key') ?? '');
-if (preg_match('/^[0-9a-f]{40}$/', $key) !== 1) {
+$modeBaru = $key === '' || $key === 'baru';
+if (!$modeBaru && preg_match('/^[0-9a-f]{40}$/', $key) !== 1) {
     render_head('Produk tidak dikenal', 'costs');
     echo '<div class="alert bad">Kunci produk tidak dikenal.</div>'
        . '<p><a class="btn ghost" href="costs.php">&larr; Kembali ke HPP</a></p>';
@@ -35,8 +46,8 @@ if (preg_match('/^[0-9a-f]{40}$/', $key) !== 1) {
 }
 
 $platform = platformFilter();
-$ident    = Reports::productIdentity($key);
-if ($ident === null) {
+$ident    = $modeBaru ? null : Reports::productIdentity($key);
+if (!$modeBaru && $ident === null) {
     render_head('Produk tidak ditemukan', 'costs');
     echo '<div class="alert bad">Produk ini tidak ada pada data penjualan.</div>'
        . '<p><a class="btn ghost" href="costs.php">&larr; Kembali ke HPP</a></p>';
@@ -48,52 +59,69 @@ if ($ident === null) {
 // belum memilih platform, yang dipakai sebagai dasar simulasi adalah yang
 // HARGA JUALNYA PALING TINGGI - itu patokan teratas untuk menetapkan harga.
 $perPf = [];
-foreach (['tokopedia', 'shopee'] as $pf) {
-    $o = Reports::latestSettledOrder($key, $pf);
-    if ($o === null) {
-        continue;
+$ref   = null;
+if (!$modeBaru) {
+    foreach (['tokopedia', 'shopee'] as $pf) {
+        $o = Reports::latestSettledOrder($key, $pf);
+        if ($o === null) {
+            continue;
+        }
+        $d = Reports::pricingFromOrder($key, (string) $o['platform'], (string) $o['order_id']);
+        if ($d['qty'] === 0) {
+            continue;
+        }
+        $perPf[$pf] = ['ref' => $o, 'dasar' => $d];
     }
-    $d = Reports::pricingFromOrder($key, (string) $o['platform'], (string) $o['order_id']);
-    if ($d['qty'] === 0) {
-        continue;
-    }
-    $perPf[$pf] = ['ref' => $o, 'dasar' => $d];
-}
 
-if ($platform !== null) {
-    $ref = $perPf[$platform]['ref'] ?? null;
-} else {
-    $ref = null;
-    $tertinggi = -1.0;
-    foreach ($perPf as $x) {
-        if ((float) $x['dasar']['harga_unit'] > $tertinggi) {
-            $tertinggi = (float) $x['dasar']['harga_unit'];
-            $ref = $x['ref'];
+    if ($platform !== null) {
+        $ref = $perPf[$platform]['ref'] ?? null;
+    } else {
+        $tertinggi = -1.0;
+        foreach ($perPf as $x) {
+            if ((float) $x['dasar']['harga_unit'] > $tertinggi) {
+                $tertinggi = (float) $x['dasar']['harga_unit'];
+                $ref = $x['ref'];
+            }
         }
     }
 }
 
-$hppDb = Reports::latestCost($key);
-$judul = (string) $ident['produk'];
+$hppDb = $modeBaru ? null : Reports::latestCost($key);
+$nama  = trim((string) (q('nama') ?? ''));
+$judul = $modeBaru
+    ? ($nama !== '' ? $nama : 'Produk baru')
+    : (string) $ident['produk'];
 
 render_head('Simulasi harga - ' . $judul, 'costs');
 ?>
 <h1 title="<?= e($judul) ?>"><?= e($judul) ?></h1>
 <p class="sub">
-  <?php if ($ident['variasi'] !== ''): ?>
-    Variasi <b><?= e($ident['variasi']) ?></b>
+  <?php if ($modeBaru): ?>
+    <b>Simulasi harga produk baru.</b> Produk ini belum ada di data penjualan, jadi harga dan
+    HPP-nya diisi sendiri. Tarif potongan dan biaya platform memakai rata-rata toko Anda.
+    <span class="no-print">&middot; <a href="costs.php">&larr; Kembali ke HPP</a></span>
+  <?php else: ?>
+    <?php if ($ident['variasi'] !== ''): ?>
+      Variasi <b><?= e($ident['variasi']) ?></b>
+    <?php endif; ?>
+    <?php if ($ident['sku'] !== ''): ?>
+      &middot; SKU <code class="k"><?= e($ident['sku']) ?></code>
+    <?php endif; ?>
+    <span class="no-print">
+      &middot; <a href="product.php?key=<?= e($key) ?>">Lihat rincian produk</a>
+      &middot; <a href="costs.php">&larr; Kembali ke HPP</a>
+    </span>
   <?php endif; ?>
-  <?php if ($ident['sku'] !== ''): ?>
-    &middot; SKU <code class="k"><?= e($ident['sku']) ?></code>
-  <?php endif; ?>
-  <span class="no-print">
-    &middot; <a href="product.php?key=<?= e($key) ?>">Lihat rincian produk</a>
-    &middot; <a href="costs.php">&larr; Kembali ke HPP</a>
-  </span>
 </p>
 
 <form method="get" class="filters card no-print" style="margin-bottom:18px">
-  <input type="hidden" name="key" value="<?= e($key) ?>">
+  <input type="hidden" name="key" value="<?= e($modeBaru ? 'baru' : $key) ?>">
+  <?php if ($modeBaru): ?>
+    <div class="field">
+      <label>Nama produk (opsional)</label>
+      <input type="text" name="nama" value="<?= e($nama) ?>" placeholder="mis. Kopi Bubuk 500g">
+    </div>
+  <?php endif; ?>
   <div class="field">
     <label>Platform</label>
     <select name="platform" onchange="this.form.submit()">
@@ -102,12 +130,15 @@ render_head('Simulasi harga - ' . $judul, 'costs');
       <option value="shopee"    <?= $platform === 'shopee'    ? 'selected' : '' ?>>Shopee</option>
     </select>
   </div>
+  <?php if ($modeBaru): ?>
+    <div class="field"><label>&nbsp;</label><button class="btn" type="submit">Terapkan</button></div>
+  <?php endif; ?>
   <div class="field"><label>&nbsp;</label>
     <button class="btn ghost" type="button" onclick="window.print()">Cetak / simpan PDF</button>
   </div>
 </form>
 
-<?php if ($ref === null): ?>
+<?php if (!$modeBaru && $ref === null): ?>
   <div class="alert warn">
     <b>Belum ada dasar perhitungan.</b>
     Produk ini belum punya pesanan <b>selesai</b> yang biayanya sudah tercatat
@@ -117,47 +148,91 @@ render_head('Simulasi harga - ' . $judul, 'costs');
     <?php else: ?>
       Unggah berkas laporan penghasilan terbaru lebih dulu.
     <?php endif; ?>
+    <br>
+    <a class="btn ghost sm" href="simulasi.php?key=baru">Simulasikan sebagai produk baru &rarr;</a>
   </div>
   <?php render_foot(); exit; ?>
 <?php endif; ?>
 
 <?php
-$dasar = Reports::pricingFromOrder($key, (string) $ref['platform'], (string) $ref['order_id']);
-$rinci = Reports::breakdownFromOrder($key, (string) $ref['platform'], (string) $ref['order_id']);
+if ($modeBaru) {
+    // Tidak ada pesanan acuan: yang dipakai tarif rata-rata toko. Rincian per
+    // komponen biaya juga tidak ada, karena itu hanya bisa datang dari
+    // pesanan sungguhan.
+    $tarif  = Reports::tarifRata();
+    $rinci  = ['potongan' => [], 'biaya' => []];
+    $acuan  = $platform !== null && isset($tarif['platform'][$platform])
+        ? $tarif['platform'][$platform]
+        : $tarif['total'];
+    $pphSudahDipungut = false;
+    $refundAda = false;
+    $lainAda   = false;
+    $awal = [
+        // Kosong, bukan nol: keduanya justru yang sedang dicari.
+        'harga'     => null,
+        'hpp'       => null,
+        'refPct'    => 0.0,
+        'potPct'    => round((float) $acuan['potongan_pct'], 6),
+        'biPct'     => round((float) $acuan['biaya_pct'], 6),
+        'lainPct'   => 0.0,
+        'ppn'       => Tax::PPN_PERSEN,
+        'pph'       => Tax::PPH_PERSEN,
+        'kreditPpn' => false,
+        'baru'      => true,
+    ];
+} else {
+    $dasar = Reports::pricingFromOrder($key, (string) $ref['platform'], (string) $ref['order_id']);
+    $rinci = Reports::breakdownFromOrder($key, (string) $ref['platform'], (string) $ref['order_id']);
 
-if ($dasar['qty'] === 0) {
-    echo '<div class="alert warn">Pesanan terakhir tidak bisa dipakai sebagai dasar '
-       . '(nilai produknya nol).</div>';
-    render_foot();
-    exit;
+    if ($dasar['qty'] === 0) {
+        echo '<div class="alert warn">Pesanan terakhir tidak bisa dipakai sebagai dasar '
+           . '(nilai produknya nol).</div>';
+        render_foot();
+        exit;
+    }
+
+    $hargaUnit = (float) $dasar['harga_unit'];
+    $hppUnit   = $hppDb !== null ? (float) $hppDb['cost_per_unit'] : 0.0;
+    $hargaTot  = (float) $dasar['harga'];
+    $qty       = (int) $dasar['qty'];
+    $perUnit   = static fn(float $total): float => $total / $qty;
+
+    // ---- Lapisan pajak ----
+    // Kalau marketplace SUDAH memungut PPh Pasal 22 pada pesanan acuan, nilainya
+    // sudah masuk ke biaya platform. Menambahkannya lagi berarti dihitung dua kali,
+    // jadi tarif awalnya dinolkan dan alasannya diberitahukan.
+    $pphSudahDipungut = (float) $dasar['pajak_platform'] > 0;
+    $ppnPersen = Tax::PPN_PERSEN;
+    $pphPersen = $pphSudahDipungut ? 0.0 : Tax::PPH_PERSEN;
+
+    // Rantai nilai per unit, memakai urutan baku yang sama dengan Laba & Biaya.
+    $c = Reports::rantaiLaba([
+        'kotor'    => $hargaUnit,
+        'refund'   => $perUnit((float) $dasar['refund']),
+        'potongan' => $perUnit((float) $dasar['potongan']),
+        'biaya'    => $perUnit((float) $dasar['biaya']),
+        'lain'     => $perUnit((float) $dasar['lain']),
+        'hpp'      => $hppUnit,
+    ], $ppnPersen, $pphPersen);
+
+    $refundAda = $c['refund'] > 0;
+    $lainAda   = abs($c['lain']) >= 1;
+    $awal = [
+        'harga'     => round($c['harga']),
+        'hpp'       => round($c['hpp']),
+        'refPct'    => round($c['refund']   / $c['harga'] * 100, 6),
+        'potPct'    => round($c['potongan'] / $c['harga'] * 100, 6),
+        'biPct'     => round($c['biaya']    / $c['harga'] * 100, 6),
+        'lainPct'   => round($c['lain']     / $c['harga'] * 100, 6),
+        'ppn'       => $c['ppn_persen'],
+        'pph'       => $c['pph_persen'],
+        'kreditPpn' => false,
+        'baru'      => false,
+    ];
 }
-
-$hargaUnit = (float) $dasar['harga_unit'];
-$hppUnit   = $hppDb !== null ? (float) $hppDb['cost_per_unit'] : 0.0;
-$hargaTot  = (float) $dasar['harga'];
-$qty       = (int) $dasar['qty'];
-$perUnit   = static fn(float $total): float => $total / $qty;
-
-// ---- Lapisan pajak ----
-// Kalau marketplace SUDAH memungut PPh Pasal 22 pada pesanan acuan, nilainya
-// sudah masuk ke biaya platform. Menambahkannya lagi berarti dihitung dua kali,
-// jadi tarif awalnya dinolkan dan alasannya diberitahukan.
-$pphSudahDipungut = (float) $dasar['pajak_platform'] > 0;
-$ppnPersen = Tax::PPN_PERSEN;
-$pphPersen = $pphSudahDipungut ? 0.0 : Tax::PPH_PERSEN;
-
-// Rantai nilai per unit, memakai urutan baku yang sama dengan Laba & Biaya.
-$c = Reports::rantaiLaba([
-    'kotor'    => $hargaUnit,
-    'refund'   => $perUnit((float) $dasar['refund']),
-    'potongan' => $perUnit((float) $dasar['potongan']),
-    'biaya'    => $perUnit((float) $dasar['biaya']),
-    'lain'     => $perUnit((float) $dasar['lain']),
-    'hpp'      => $hppUnit,
-], $ppnPersen, $pphPersen);
 ?>
 
-<?php if (count($perPf) > 1): ?>
+<?php if (!$modeBaru && count($perPf) > 1): ?>
 <div class="card">
   <h2>Histori terakhir tiap platform</h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
@@ -199,6 +274,63 @@ $c = Reports::rantaiLaba([
 </div>
 <?php endif; ?>
 
+<?php if ($modeBaru): ?>
+<div class="card">
+  <h2>Asumsi awal</h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:12px">
+    Produk baru belum punya histori sendiri, jadi <b>potongan</b> dan <b>biaya platform</b>-nya
+    diambil dari <b>rata-rata toko Anda</b>
+    <?php if ($tarif['dari'] !== null): ?>pada pesanan selesai
+      <b><?= e(shortDate($tarif['dari'])) ?></b> &ndash;
+      <b><?= e(shortDate($tarif['sampai'])) ?></b><?php endif; ?>.
+    Tarif komisi dan biaya layanan berubah dari waktu ke waktu, jadi hanya beberapa bulan
+    terakhir yang dipakai. Semuanya masih bisa diubah di bawah kalau Anda tahu tarifnya akan
+    berbeda &mdash; misalnya produk ini akan diikutkan kampanye dengan diskon lebih besar.
+  </p>
+
+  <?php if ($tarif['platform'] === []): ?>
+    <div class="alert warn">
+      <b>Belum ada data penjualan sama sekali</b>, jadi potongan dan biaya platform dimulai dari
+      0%. Isi sendiri perkiraannya di bawah &mdash; komisi dan biaya layanan marketplace
+      biasanya ada di kisaran 5&ndash;15% dari harga jual.
+    </div>
+  <?php else: ?>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Dasar tarif</th><th class="num">Pesanan</th><th class="num">Pendapatan kotor</th>
+          <th class="num">Potongan &amp; diskon</th><th class="num">Biaya platform</th><th></th>
+        </tr></thead>
+        <tbody>
+        <?php
+        $barisTarif = $tarif['platform'];
+        $barisTarif['__semua'] = $tarif['total'];
+        foreach ($barisTarif as $pf => $t):
+            $semua   = $pf === '__semua';
+            $dipakai = $semua ? $platform === null : $platform === $pf; ?>
+          <tr<?= $dipakai ? ' class="sorot"' : '' ?>>
+            <td><?= $semua ? '<b>Semua platform</b>' : platformBadge((string) $pf) ?></td>
+            <td class="num"><?= num($t['pesanan']) ?></td>
+            <td class="num"><?= rp($t['kotor']) ?></td>
+            <td class="num neg"><?= num($t['potongan_pct'], 2) ?>%</td>
+            <td class="num neg"><?= num($t['biaya_pct'], 2) ?>%</td>
+            <td class="nowrap">
+              <?php if ($dipakai): ?>
+                <span class="badge ok">dipakai</span>
+              <?php else: ?>
+                <a class="btn ghost sm no-print" href="<?= e('simulasi.php?' . http_build_query(array_filter([
+                    'key' => 'baru', 'nama' => $nama, 'platform' => $semua ? null : $pf,
+                ]))) ?>">Pakai ini</a>
+              <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+</div>
+<?php else: ?>
 <div class="card">
   <h2>Dasar perhitungan</h2>
   <p class="help" style="margin-top:-4px;margin-bottom:12px">
@@ -373,19 +505,28 @@ $c = Reports::rantaiLaba([
     </table>
   </div>
 </div>
+<?php endif; ?>
 
 <div class="card">
   <h2>
     Simulasi
     <button class="btn ghost sm no-print" type="button" id="simReset" style="float:right">
-      Reset ke histori terakhir
+      <?= $modeBaru ? 'Reset ke asumsi awal' : 'Reset ke histori terakhir' ?>
     </button>
   </h2>
   <p class="help no-print" style="margin-top:-4px;margin-bottom:14px">
-    Semua angka di bawah bisa diubah. Isi <b>harga jual</b> untuk melihat marjin yang didapat, atau
-    isi <b>marjin</b> yang diinginkan untuk melihat harga jual yang diperlukan. Persentase potongan,
-    biaya, dan nilai HPP juga bisa disesuaikan kalau Anda tahu tarifnya akan berubah &mdash;
-    tombol <b>Reset</b> mengembalikan semuanya ke angka histori terakhir.
+    <?php if ($modeBaru): ?>
+      Isi <b>HPP per unit</b> lebih dulu, lalu pilih salah satu: isi <b>harga jual</b> yang Anda
+      rencanakan untuk melihat marjinnya, atau isi <b>marjin</b> yang Anda targetkan untuk melihat
+      harga jual yang diperlukan. Potongan dan biaya platform sudah terisi dari rata-rata toko
+      &mdash; ubah kalau produk ini akan diperlakukan berbeda. Tombol <b>Reset</b> mengembalikan
+      semuanya ke asumsi awal.
+    <?php else: ?>
+      Semua angka di bawah bisa diubah. Isi <b>harga jual</b> untuk melihat marjin yang didapat, atau
+      isi <b>marjin</b> yang diinginkan untuk melihat harga jual yang diperlukan. Persentase potongan,
+      biaya, dan nilai HPP juga bisa disesuaikan kalau Anda tahu tarifnya akan berubah &mdash;
+      tombol <b>Reset</b> mengembalikan semuanya ke angka histori terakhir.
+    <?php endif; ?>
   </p>
 
   <div class="grid2 no-print" style="margin-bottom:8px">
@@ -439,7 +580,7 @@ $c = Reports::rantaiLaba([
       <tbody>
         <tr><td><b>Harga jual terdaftar</b></td><td class="num" id="oHarga"><b>-</b></td>
             <td class="num muted">100,00%</td><td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
-        <?php if ($c['refund'] > 0): ?>
+        <?php if ($refundAda): ?>
           <tr><td>Pengembalian dana</td><td class="num neg" id="oRefund">-</td>
               <td class="num neg" id="pRefund">-</td>
               <td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
@@ -474,9 +615,9 @@ $c = Reports::rantaiLaba([
             <td class="muted" style="font-size:11.5px"><?= e(Profiles::LABELS[$it['kategori']] ?? $it['kategori']) ?></td>
           </tr>
         <?php endforeach; ?>
-        <?php if (abs($c['lain']) >= 1): ?>
+        <?php if ($lainAda): ?>
           <tr><td>Penyesuaian &amp; selisih</td><td class="num" id="oLain">-</td>
-              <td class="num muted"><?= num(abs($c['lain']) / $c['harga'] * 100, 2) ?>%</td>
+              <td class="num muted"><?= num(abs($awal['lainPct']), 2) ?>%</td>
               <td class="muted" style="font-size:11.5px">% dari harga jual</td></tr>
         <?php endif; ?>
         <tr style="background:rgba(0,0,0,.02)">
@@ -533,18 +674,10 @@ $c = Reports::rantaiLaba([
 
 <script>
 (function () {
-  // Nilai awal dari histori terakhir. Dipakai juga oleh tombol Reset.
-  var awal = {
-    harga:   <?= json_encode(round($c['harga'])) ?>,
-    hpp:     <?= json_encode(round($c['hpp'])) ?>,
-    refPct:  <?= json_encode(round($c['refund']   / $c['harga'] * 100, 6)) ?>,
-    potPct:  <?= json_encode(round($c['potongan'] / $c['harga'] * 100, 6)) ?>,
-    biPct:   <?= json_encode(round($c['biaya']    / $c['harga'] * 100, 6)) ?>,
-    lainPct: <?= json_encode(round($c['lain']     / $c['harga'] * 100, 6)) ?>,
-    ppn:     <?= json_encode($c['ppn_persen']) ?>,
-    pph:     <?= json_encode($c['pph_persen']) ?>,
-    kreditPpn: false
-  };
+  // Nilai awal: histori terakhir produk ini, atau - untuk produk baru -
+  // tarif rata-rata toko dengan harga dan HPP dikosongkan. Dipakai juga oleh
+  // tombol Reset. Dibangun di sisi PHP supaya kedua mode satu jalur.
+  var awal = <?= json_encode($awal) ?>;
   var marjinWajarMin = <?= json_encode(Reports::MARJIN_MIN) ?>;
   var marjinWajarMax = <?= json_encode(Reports::MARJIN_MAX) ?>;
 
@@ -563,7 +696,10 @@ $c = Reports::rantaiLaba([
   }
   function ambil(input, fallback) {
     var v = parseFloat(input.value);
-    return isFinite(v) ? v : fallback;
+    if (isFinite(v)) { return v; }
+    // Produk baru: harga dan HPP memang belum ada. Nilainya null, dan null
+    // dalam hitungan berarti nol - bukan NaN yang merambat ke seluruh tabel.
+    return fallback === null || fallback === undefined ? 0 : fallback;
   }
 
   /**
@@ -622,7 +758,7 @@ $c = Reports::rantaiLaba([
     set('oDpp', rp(v.dpp));             set('pDpp', p(v.dpp));
     set('oPph', rp(-v.pph));            set('pPph', p(v.pph));
     set('kPpn', pc(v.ppnPersen, 0) + ' dari harga setelah dikurang diskon');
-    set('kPph', pc(v.pphPersen, 1) + ' dari harga setelah dikurang diskon');
+    set('kPph', pc(v.pphPersen, 1) + ' dari DPP &mdash; diskon tidak mengurangi dasarnya');
     set('oJual', rp(v.jual), true);     set('pJual', p(v.jual), true);
     set('oHpp', rp(-v.hpp));
     set('oHppPct', v.jual > 0 && v.hpp > 0 ? pc(v.hpp / v.jual * 100) : '-');
@@ -659,10 +795,12 @@ $c = Reports::rantaiLaba([
     }
     el('simCatatan').innerHTML = pesan;
 
+    if (awal.baru) { el('simUbah').innerHTML = ''; return; }
+
     var ubah = [];
     if (Math.abs(v.potPct - awal.potPct) > 0.005) { ubah.push('potongan'); }
     if (Math.abs(v.biPct - awal.biPct) > 0.005)   { ubah.push('biaya platform'); }
-    if (Math.abs(ambil(elHpp, awal.hpp) - awal.hpp) > 0.5) { ubah.push('HPP'); }
+    if (Math.abs(ambil(elHpp, awal.hpp) - (awal.hpp || 0)) > 0.5) { ubah.push('HPP'); }
     if (Math.abs(v.ppnPersen - awal.ppn) > 0.005) { ubah.push('PPN'); }
     if (Math.abs(v.pphPersen - awal.pph) > 0.005) { ubah.push('pajak e-commerce'); }
     if (elKredit.checked !== awal.kreditPpn) { ubah.push('kredit PPN masukan'); }
@@ -673,10 +811,23 @@ $c = Reports::rantaiLaba([
 
   function dariHarga() {
     var harga = ambil(elHarga, awal.harga);
-    if (harga <= 0) { return; }
+    if (harga <= 0) { kosongkan(); return; }
     var v = hitung(harga);
     elMarjin.value = (v.jual > 0 ? v.marjin : 0).toFixed(1);
     render(harga);
+  }
+
+  /** Belum ada harga - seluruh keluaran dikosongkan supaya tidak menyesatkan. */
+  function kosongkan() {
+    ['oHarga','oRefund','pRefund','oPotongan','pPotongan','oSetelah','pSetelah',
+     'oBiaya','pBiaya','oLain','oDana','pDana','oPpn','pPpn','oDpp','pDpp',
+     'oPph','pPph','oJual','pJual','oHpp','oHppPct','oLaba','oMarjin']
+      .forEach(function (id) { set(id, '-'); });
+    el('simCatatan').innerHTML = awal.hpp === null && !elHpp.value
+      ? 'Isi <b>HPP per unit</b> lalu <b>marjin</b> yang diinginkan untuk melihat harga jual yang '
+        + 'diperlukan &mdash; atau isi <b>harga jual</b> langsung untuk melihat marjinnya.'
+      : 'Isi <b>harga jual per unit</b>, atau isi <b>marjin</b> yang diinginkan.';
+    el('simUbah').innerHTML = '';
   }
 
   function dariMarjin() {
@@ -695,9 +846,11 @@ $c = Reports::rantaiLaba([
     render(parseFloat(elHarga.value));
   }
 
+  function isi(input, nilai) { input.value = nilai === null ? '' : nilai; }
+
   function reset() {
-    elHarga.value = awal.harga;
-    elHpp.value   = awal.hpp;
+    isi(elHarga, awal.harga);
+    isi(elHpp, awal.hpp);
     elPot.value   = awal.potPct.toFixed(2);
     elBi.value    = awal.biPct.toFixed(2);
     elPpn.value   = awal.ppn;

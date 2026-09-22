@@ -529,72 +529,6 @@ final class Reports
     private const TGL_SELESAI = 'DATE(COALESCE(o.completed_at, o.delivered_at, o.shipped_at, o.order_date))';
 
     /**
-     * Rentang tanggal settlement yang benar-benar dimiliki tiap platform.
-     *
-     * Dipakai sebagai batas penilaian "dana belum dilepas". Tanpa batas ini,
-     * seluruh pesanan dari periode yang berkas penghasilannya memang belum
-     * pernah diunggah akan tampak seperti dana tertahan - padahal yang belum
-     * ada hanyalah datanya.
-     *
-     * @return array<string,array{awal:string,akhir:string}>
-     */
-    public static function cakupanSettlement(): array
-    {
-        $out = [];
-        foreach (Db::all(
-            'SELECT platform, MIN(settlement_date) awal, MAX(settlement_date) akhir
-               FROM settlements WHERE settlement_date IS NOT NULL GROUP BY platform'
-        ) as $r) {
-            $out[(string) $r['platform']] = [
-                'awal'  => (string) $r['awal'],
-                'akhir' => (string) $r['akhir'],
-            ];
-        }
-        return $out;
-    }
-
-    /**
-     * Pesanan selesai yang dananya belum dilepas, dikelompokkan menurut umur.
-     *
-     * Platform mencairkan dana beberapa hari setelah pesanan selesai, jadi
-     * pesanan yang baru selesai kemarin memang belum boleh dianggap
-     * bermasalah. Yang perlu dilihat adalah yang sudah melewati tenggat itu.
-     *
-     * @return array<int,array{platform:string,kelompok:string,urut:int,jumlah:int,nilai:float}>
-     */
-    public static function danaBelumDilepas(int $batasHari = 7, ?string $platform = null): array
-    {
-        $tgl = self::TGL_SELESAI;
-        $a = [$batasHari, $batasHari * 2];
-        $w = '';
-        if ($platform !== null && $platform !== '') {
-            $w = ' AND o.platform = ?';
-            $a[] = $platform;
-        }
-
-        return Db::all(
-            "SELECT o.platform,
-                    CASE WHEN {$tgl} > c.akhir THEN 3
-                         WHEN DATEDIFF(CURDATE(), {$tgl}) <= ? THEN 0
-                         WHEN DATEDIFF(CURDATE(), {$tgl}) <= ? THEN 1
-                         ELSE 2 END AS urut,
-                    COUNT(*) AS jumlah,
-                    COALESCE(SUM(o.items_subtotal_after), 0) AS nilai,
-                    MIN({$tgl}) AS paling_lama
-               FROM orders o
-               LEFT JOIN settlements s ON s.platform = o.platform AND s.order_id = o.order_id
-               JOIN (SELECT platform, MIN(settlement_date) awal, MAX(settlement_date) akhir
-                       FROM settlements WHERE settlement_date IS NOT NULL GROUP BY platform) c
-                 ON c.platform = o.platform
-              WHERE o.status_norm = 'selesai' AND s.id IS NULL
-                AND {$tgl} >= c.awal {$w}
-              GROUP BY o.platform, urut
-              ORDER BY o.platform, urut",
-            $a
-        );
-    }
-
-    /**
      * Daftar pesanannya, yang paling lama menunggu lebih dulu.
      *
      * Tanpa $ym yang ditampilkan hanya yang sudah lewat tenggat - itu yang
@@ -1351,6 +1285,74 @@ final class Reports
     }
 
     /**
+     * Tarif rata-rata toko: potongan dan biaya platform sebagai persentase
+     * dari pendapatan kotor.
+     *
+     * Dipakai sebagai nilai awal simulasi PRODUK BARU - produk yang belum
+     * pernah terjual tidak punya histori sendiri, tetapi tarif komisi, biaya
+     * layanan, dan kebiasaan diskon tokonya sudah terlihat dari produk lain.
+     * Hanya beberapa bulan terakhir yang dipakai, karena tarif platform
+     * berubah dari waktu ke waktu dan rerata bertahun-tahun masih membawa
+     * tarif lama.
+     *
+     * @return array{platform:array<string,array>,total:array,dari:?string,sampai:?string}
+     */
+    public static function tarifRata(int $bulanTerakhir = 6): array
+    {
+        $syarat = 'ord_status = ' . Db::conn()->quote(self::STATUS_DIAKUI) . ' AND ord_ada_produk = 1';
+        $akhir = Db::val("SELECT MAX(ord_date) FROM settlements WHERE {$syarat}", [], null);
+
+        $a = [];
+        $w = $syarat;
+        if ($akhir !== null && $bulanTerakhir > 0) {
+            $w .= ' AND ord_date >= ?';
+            $a[] = date('Y-m-d', strtotime($akhir . ' -' . $bulanTerakhir . ' month') ?: time());
+        }
+
+        // Potongan dan biaya tersimpan bertanda minus, jadi tandanya dibalik
+        // supaya persentasenya terbaca sebagai "sekian persen dipotong".
+        $olah = static function (array $r): array {
+            $kotor = (float) $r['kotor'];
+            return [
+                'kotor'        => $kotor,
+                'potongan_pct' => $kotor > 0 ? -(float) $r['potongan'] / $kotor * 100 : 0.0,
+                'biaya_pct'    => $kotor > 0 ? -(float) $r['biaya'] / $kotor * 100 : 0.0,
+                'pesanan'      => (int) $r['pesanan'],
+            ];
+        };
+
+        $perPlatform = [];
+        $jml = ['kotor' => 0.0, 'potongan' => 0.0, 'biaya' => 0.0, 'pesanan' => 0];
+        $dari = $sampai = null;
+        foreach (Db::all(
+            "SELECT platform,
+                    SUM(" . self::KOTOR . ") AS kotor,
+                    SUM(total_potongan)      AS potongan,
+                    SUM(total_fee)           AS biaya,
+                    COUNT(DISTINCT order_id) AS pesanan,
+                    MIN(ord_date) AS dari, MAX(ord_date) AS sampai
+             FROM settlements WHERE {$w}
+             GROUP BY platform ORDER BY platform",
+            $a
+        ) as $r) {
+            $perPlatform[(string) $r['platform']] = $olah($r);
+            $jml['kotor']    += (float) $r['kotor'];
+            $jml['potongan'] += (float) $r['potongan'];
+            $jml['biaya']    += (float) $r['biaya'];
+            $jml['pesanan']  += (int) $r['pesanan'];
+            $dari   = $dari === null ? $r['dari'] : min($dari, $r['dari']);
+            $sampai = $sampai === null ? $r['sampai'] : max($sampai, $r['sampai']);
+        }
+
+        return [
+            'platform' => $perPlatform,
+            'total'    => $olah($jml),
+            'dari'     => $dari !== null ? (string) $dari : null,
+            'sampai'   => $sampai !== null ? (string) $sampai : null,
+        ];
+    }
+
+    /**
      * Pesanan TERAKHIR yang memuat produk ini dan sudah lengkap biayanya.
      *
      * Dipakai sebagai dasar simulasi harga karena tarif komisi dan biaya
@@ -1672,22 +1674,6 @@ final class Reports
     // Pemantauan kelengkapan data
     // -----------------------------------------------------------------
 
-    /** Kapan tiap jenis berkas terakhir diunggah. */
-    public static function uploadStatus(): array
-    {
-        return Db::all(
-            "SELECT platform, dataset,
-                    COUNT(*)            AS jumlah,
-                    MAX(created_at)     AS terakhir,
-                    MAX(period_to)      AS data_sampai,
-                    MIN(period_from)    AS data_dari
-             FROM uploads
-             WHERE status IN ('success','partial')
-             GROUP BY platform, dataset
-             ORDER BY platform, dataset"
-        );
-    }
-
     /**
      * Kelengkapan data per BULAN PESANAN.
      *
@@ -1718,7 +1704,6 @@ final class Reports
                     'pending' => 0, 'nilai_pending' => 0.0,
                     'belum_cair' => 0, 'nilai_belum_cair' => 0.0,
                     'belum_dinilai' => 0,
-                    'tanpa_pesanan' => 0, 'nilai_tanpa_pesanan' => 0.0,
                     'produk' => 0, 'produk_tanpa_hpp' => 0,
                     'beban' => 0.0, 'beban_baris' => 0,
                 ];
@@ -1790,31 +1775,6 @@ final class Reports
             }
         }
 
-        // Uang yang cair atas pesanan yang tidak ada di database sama sekali.
-        // Bukan lagi ukuran utama kelengkapan - dasarnya bulan pencairan,
-        // bukan bulan pesanan - tetapi tetap ditampilkan sebagai catatan,
-        // karena uang ini tidak masuk bulan pesanan mana pun.
-        foreach (Db::all(
-            "SELECT st.period_ym AS ym,
-                    COUNT(*) AS tanpa_order,
-                    SUM(st.net_amount) AS nilai
-             FROM (
-                 SELECT platform, order_id,
-                        DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
-                        SUM(net_amount) AS net_amount
-                 FROM settlements WHERE settlement_date IS NOT NULL
-                 GROUP BY platform, order_id
-             ) st
-             LEFT JOIN orders o ON o.platform = st.platform AND o.order_id = st.order_id
-                               AND o.items_subtotal_before > 0
-             WHERE o.id IS NULL
-             GROUP BY st.period_ym"
-        ) as $r) {
-            $touch($bulan, $r['ym']);
-            $bulan[$r['ym']]['tanpa_pesanan'] = (int) $r['tanpa_order'];
-            $bulan[$r['ym']]['nilai_tanpa_pesanan'] = (float) $r['nilai'];
-        }
-
         foreach (self::costCoverageByMonth() as $r) {
             $touch($bulan, $r['period_ym']);
             $bulan[$r['period_ym']]['produk'] = (int) $r['produk'];
@@ -1834,41 +1794,6 @@ final class Reports
 
         krsort($bulan);
         return array_values($bulan);
-    }
-
-    /** Rincian settlement yang belum ada data pesanannya, per bulan. */
-    public static function unmatchedSettlements(?string $ym, int $limit = 300): array
-    {
-        // Disaring menurut BULAN PENCAIRAN, bukan bulan pesanan: justru
-        // pesanannya yang tidak ada, jadi tanggal pesanannya pun belum
-        // diketahui. Syarat status juga tidak dipakai di sini - salinan
-        // status pada baris settlement ikut kosong selama berkas pesanannya
-        // belum diunggah.
-        $w = 'settlement_date IS NOT NULL';
-        $a = [];
-        if ($ym !== null) {
-            $awal = $ym . '-01';
-            $w .= ' AND settlement_date BETWEEN ? AND ?';
-            $a[] = $awal;
-            $a[] = date('Y-m-t', strtotime($awal) ?: time());
-        }
-
-        return Db::all(
-            "SELECT st.period_ym, st.platform, st.order_id, st.net_amount
-             FROM (
-                 SELECT platform, order_id,
-                        DATE_FORMAT(MAX(settlement_date),'%Y-%m') AS period_ym,
-                        SUM(net_amount) AS net_amount
-                 FROM settlements WHERE {$w}
-                 GROUP BY platform, order_id
-             ) st
-             LEFT JOIN orders o ON o.platform = st.platform AND o.order_id = st.order_id
-                               AND o.items_subtotal_before > 0
-             WHERE o.id IS NULL
-             ORDER BY st.net_amount DESC
-             LIMIT {$limit}",
-            $a
-        );
     }
 
     // -----------------------------------------------------------------

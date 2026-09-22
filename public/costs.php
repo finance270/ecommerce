@@ -91,6 +91,10 @@ render_head('HPP Produk', 'costs');
   HPP diisi <b>per produk per bulan</b>, lalu dipakai menghitung laba. Pencocokan memakai
   <b>nama produk + variasi</b> &mdash; bukan SKU &mdash; karena pada ekspor Tokopedia dan Shopee
   kolom SKU penjual sebagian besar kosong.
+  <span class="no-print">
+    &middot; Produk yang <b>belum pernah terjual</b> tetap bisa dihitung harganya:
+    <a href="simulasi.php?key=baru" target="_blank" rel="noopener">Simulasi harga produk baru &rarr;</a>
+  </span>
 </p>
 
 <?php foreach ($errors as $er): ?>

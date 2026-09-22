@@ -40,7 +40,7 @@ $tabLaporan = [
     'fee_detail' => 'pnl', 'fee_category' => 'pnl', 'monthly_settlement' => 'pnl',
     'product_net' => 'pnl', 'product_profit' => 'pnl',
     'products' => 'products', 'weekly' => 'performance',
-    'unsettled' => 'recon', 'unmatched' => 'monitoring', 'monitoring' => 'monitoring',
+    'unsettled' => 'recon', 'monitoring' => 'monitoring',
     'belum_selesai' => 'monitoring', 'belum_cair' => 'monitoring',
     'missing_cost' => 'costs', 'cost_check' => 'costs',
     'expenses' => 'expenses',
@@ -137,14 +137,12 @@ switch ($report) {
         csvOut("monitoring_kelengkapan_{$stamp}.csv", [
             'Bulan Pesanan', 'Pesanan', 'Selesai', 'Retur/Batal', 'Belum Selesai',
             'Nilai Belum Selesai', 'Dana Belum Cair', 'Nilai Belum Cair', 'Belum Bisa Dinilai',
-            'Cair Tanpa Data Pesanan', 'Nilai Cair Tanpa Data Pesanan',
             'Produk Terjual', 'Produk Tanpa HPP', 'Beban Operasional',
             'Pesanan Diperbarui', 'Settlement Diperbarui',
         ], array_map(static fn(array $b): array => [
             $b['ym'], $b['pesanan'], $b['selesai'], $b['retur_batal'], $b['pending'],
             round($b['nilai_pending'], 2), $b['belum_cair'], round($b['nilai_belum_cair'], 2),
-            $b['belum_dinilai'], $b['tanpa_pesanan'], round($b['nilai_tanpa_pesanan'], 2),
-            $b['produk'], $b['produk_tanpa_hpp'], round($b['beban'], 2),
+            $b['belum_dinilai'], $b['produk'], $b['produk_tanpa_hpp'], round($b['beban'], 2),
             $b['pesanan_update'], $b['settlement_update'],
         ], $rows));
 
@@ -174,17 +172,6 @@ switch ($report) {
                 $r['platform'], $r['order_id'], $r['order_date'], $r['tgl_selesai'],
                 $r['umur'], $r['nilai'], $r['status_raw'],
             ], Reports::danaBelumDilepasRinci($hari, null, 100000, $ym))
-        );
-
-    case 'unmatched':
-        $ym = q('ym');
-        if ($ym !== null && preg_match('/^\d{4}-\d{2}$/', $ym) !== 1) {
-            $ym = null;
-        }
-        $rows = Reports::unmatchedSettlements($ym, 100000);
-        csvOut("settlement_tanpa_data_pesanan_{$stamp}.csv",
-            ['Bulan Settle', 'Platform', 'No Pesanan', 'Dana Bersih'],
-            array_map(static fn($r) => [$r['period_ym'], $r['platform'], $r['order_id'], $r['net_amount']], $rows)
         );
 
     case 'cost_check':
