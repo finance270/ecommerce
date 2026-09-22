@@ -87,7 +87,22 @@ render_head('Monitoring Data', 'monitoring');
               <div class="muted" style="font-size:11px"><?= number_format((float) $selesaiPersen, 1, ',', '.') ?>%</div>
             <?php else: ?><span class="muted">-</span><?php endif; ?>
           </td>
-          <td class="num"><?= $b['retur_batal'] > 0 ? num($b['retur_batal']) : '<span class="muted">-</span>' ?></td>
+          <td class="num">
+            <?php if ($b['retur_batal'] > 0): ?>
+              <?= num($b['retur_batal']) ?>
+              <div class="muted" style="font-size:11px">
+                <?= num($b['batal']) ?> batal
+                <?php if ($b['retur'] > 0 && Auth::can('refunds')): ?>
+                  &middot; <a class="muted" href="<?= e('refunds.php?' . http_build_query([
+                      'from' => $b['ym'] . '-01',
+                      'to'   => date('Y-m-t', strtotime($b['ym'] . '-01') ?: time()),
+                  ])) ?>"><?= num($b['retur']) ?> retur</a>
+                <?php else: ?>
+                  &middot; <?= num($b['retur']) ?> retur
+                <?php endif; ?>
+              </div>
+            <?php else: ?><span class="muted">-</span><?php endif; ?>
+          </td>
           <td class="num">
             <?php if ($b['pending'] > 0): ?>
               <a href="<?= e($tautan(['pending' => $b['ym']]) . '#proses') ?>" class="neg"><?= num($b['pending']) ?></a>
@@ -133,6 +148,12 @@ render_head('Monitoring Data', 'monitoring');
   <p class="help" style="margin-top:12px">
     <b>Belum bisa dinilai</b> berarti berkas penghasilan untuk tanggal itu memang belum diunggah,
     jadi yang belum ada adalah datanya &mdash; bukan dananya.
+    <br>
+    <b>Batal</b> dan <b>retur</b> dipisah karena akibatnya berbeda jauh. Pesanan <b>batal</b>
+    tidak pernah dibayarkan platform, jadi tidak ada uang yang dikembalikan &mdash; nilainya
+    sekadar penjualan yang tidak jadi. Pesanan <b>retur</b> dananya sudah sempat masuk lalu
+    dikembalikan, dan hanya itu yang muncul di tab Pengembalian. Karena itu jumlah retur/batal
+    di sini hampir selalu jauh lebih besar daripada jumlah transaksi pengembalian.
   </p>
 </div>
 

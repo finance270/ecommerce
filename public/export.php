@@ -135,12 +135,12 @@ switch ($report) {
     case 'monitoring':
         $rows = Reports::dataMonitor();
         csvOut("monitoring_kelengkapan_{$stamp}.csv", [
-            'Bulan Pesanan', 'Pesanan', 'Selesai', 'Retur/Batal', 'Belum Selesai',
+            'Bulan Pesanan', 'Pesanan', 'Selesai', 'Retur/Batal', 'Batal', 'Retur', 'Belum Selesai',
             'Nilai Belum Selesai', 'Dana Belum Cair', 'Nilai Belum Cair', 'Belum Bisa Dinilai',
             'Produk Terjual', 'Produk Tanpa HPP', 'Beban Operasional',
             'Pesanan Diperbarui', 'Settlement Diperbarui',
         ], array_map(static fn(array $b): array => [
-            $b['ym'], $b['pesanan'], $b['selesai'], $b['retur_batal'], $b['pending'],
+            $b['ym'], $b['pesanan'], $b['selesai'], $b['retur_batal'], $b['batal'], $b['retur'], $b['pending'],
             round($b['nilai_pending'], 2), $b['belum_cair'], round($b['nilai_belum_cair'], 2),
             $b['belum_dinilai'], $b['produk'], $b['produk_tanpa_hpp'], round($b['beban'], 2),
             $b['pesanan_update'], $b['settlement_update'],

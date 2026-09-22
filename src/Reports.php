@@ -1718,7 +1718,7 @@ final class Reports
                 $bulan[$ym] = [
                     'ym' => $ym, 'pesanan' => 0, 'pesanan_update' => null,
                     'settlement' => 0, 'settlement_update' => null,
-                    'selesai' => 0, 'retur_batal' => 0,
+                    'selesai' => 0, 'retur_batal' => 0, 'batal' => 0, 'retur' => 0,
                     'pending' => 0, 'nilai_pending' => 0.0,
                     'belum_cair' => 0, 'nilai_belum_cair' => 0.0,
                     'belum_dinilai' => 0,
@@ -1745,6 +1745,11 @@ final class Reports
                     COUNT(*) AS pesanan,
                     SUM(o.status_norm = 'selesai')            AS selesai,
                     SUM(o.status_norm IN ('retur','batal'))   AS retur_batal,
+                    -- Dipisah karena akibatnya berbeda: batal tidak pernah
+                    -- dibayarkan platform sehingga tidak ada yang dikembalikan,
+                    -- sedangkan retur adalah uang yang sudah masuk lalu balik.
+                    SUM(o.status_norm = 'batal')              AS batal,
+                    SUM(o.status_norm = 'retur')              AS retur,
                     SUM({$pending})                           AS pending,
                     COALESCE(SUM(CASE WHEN {$pending} THEN o.items_subtotal_after END), 0)
                         AS nilai_pending,
@@ -1769,6 +1774,8 @@ final class Reports
                 'pesanan'          => (int) $r['pesanan'],
                 'selesai'          => (int) $r['selesai'],
                 'retur_batal'      => (int) $r['retur_batal'],
+                'batal'            => (int) $r['batal'],
+                'retur'            => (int) $r['retur'],
                 'pending'          => (int) $r['pending'],
                 'nilai_pending'    => (float) $r['nilai_pending'],
                 'belum_cair'       => (int) $r['belum_cair'],

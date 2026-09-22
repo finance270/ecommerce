@@ -31,10 +31,17 @@ render_head('Pengembalian', 'refunds');
 <p class="sub">
   Berbasis <b>tanggal pesanan</b>, sama seperti laporan Laba &amp; Biaya &mdash; pengembalian
   melekat pada pesanan yang dikembalikan, bukan pada hari uangnya bergerak. Bedanya, di sini
-  pesanan <b>batal dan retur ikut ditampilkan</b>, karena justru itulah yang dilaporkan.
+  syarat status <b>selesai</b> tidak dipakai, jadi pesanan yang berakhir retur pun ikut terhitung.
   Nilainya <b>sudah dipotong</b> dari pendapatan kotor di Laba &amp; Biaya: barang yang
   dikembalikan berarti penjualannya tidak jadi, jadi tidak dihitung sebagai omzet lalu
   dikurangi lagi.
+</p>
+<p class="sub" style="margin-top:-8px">
+  <b>Pesanan batal bukan pengembalian dan tidak muncul di sini.</b> Pesanan yang batal sebelum
+  dananya cair tidak pernah dibayarkan platform, jadi tidak ada yang dikembalikan &mdash; nilainya
+  hanya penjualan yang tidak pernah terjadi, dan memang tidak pernah masuk omzet. Angka di halaman
+  ini adalah uang yang <b>benar-benar sudah masuk lalu dikembalikan</b> ke pembeli, jadi wajar
+  jauh lebih kecil daripada nilai pembatalan.
 </p>
 
 <?php render_filter($from, $to, $platform); ?>
