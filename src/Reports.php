@@ -1647,28 +1647,6 @@ final class Reports
         );
     }
 
-    /** Produk yang paling sering ikut batal, dinilai dari isi pesanannya. */
-    public static function batalByProduct(?string $from, ?string $to, ?string $platform, int $limit = 100): array
-    {
-        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
-        $limit = max(1, min(1000, $limit));
-        return Db::all(
-            "SELECT COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
-                    COALESCE(i.variation,'') AS variasi,
-                    MAX(i.cost_key)          AS cost_key,
-                    COUNT(DISTINCT o.id)     AS pesanan,
-                    SUM(i.qty)               AS qty,
-                    SUM(i.subtotal_after_disc) AS nilai
-             FROM orders o
-             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
-             WHERE {$w} AND o.status_norm IN ('batal','retur')
-             GROUP BY produk, variasi
-             ORDER BY nilai DESC
-             LIMIT {$limit}",
-            $a
-        );
-    }
-
     /** Daftar pesanan batal, yang nilainya terbesar lebih dulu. */
     public static function batalList(?string $from, ?string $to, ?string $platform, int $limit = 200): array
     {
@@ -1681,24 +1659,6 @@ final class Reports
              FROM orders o
              WHERE {$w} AND o.status_norm IN ('batal','retur')
              ORDER BY o.items_subtotal_after DESC, o.order_date DESC
-             LIMIT {$limit}",
-            $a
-        );
-    }
-
-    /** Alasan pembatalan yang paling sering muncul. */
-    public static function batalByReason(?string $from, ?string $to, ?string $platform, int $limit = 30): array
-    {
-        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
-        $limit = max(1, min(200, $limit));
-        return Db::all(
-            "SELECT COALESCE(NULLIF(o.cancel_reason,''),'(tidak disebutkan)') AS alasan,
-                    COUNT(*) AS pesanan,
-                    COALESCE(SUM(o.items_subtotal_after), 0) AS nilai
-             FROM orders o
-             WHERE {$w} AND o.status_norm IN ('batal','retur')
-             GROUP BY alasan
-             ORDER BY nilai DESC
              LIMIT {$limit}",
             $a
         );

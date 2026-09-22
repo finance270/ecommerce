@@ -335,17 +335,19 @@ Di layar hanya 100 teratas yang ditampilkan agar tabelnya enak dibaca, tetapi **
 tetap ikut tercetak** saat dibuat PDF — tidak perlu mengubah pengaturan apa pun lebih dulu.
 Tombol *Tampilkan semua* membuka sisanya di layar bila diperlukan.
 
-Rinciannya dipindah ke menu **Batal/Retur** tersendiri:
+Rinciannya dipindah ke menu **Batal/Retur** tersendiri, yang sengaja berisi **angka saja**
+supaya seluruhnya terbaca tanpa menggulir: empat KPI (nilai pesanan batal, rasionya terhadap
+seluruh nilai pesanan, total pengembalian dana, rasionya terhadap kotor sebelum refund) dan satu
+tabel per bulan per platform yang menyandingkan keduanya. Daftar per pesanan tidak ditampilkan
+di layar — tersedia lewat tiga tombol **Ekspor CSV**: pesanan batal (lengkap dengan alasan
+pembatalannya), transaksi pengembalian, dan pengembalian per produk.
 
-- total refund, rasionya terhadap kotor **sebelum** refund, dan berapa pesanan yang terkena;
-- refund per bulan per platform, dengan rasio terhadap kotor **seluruh bulan itu** (bukan hanya
-  transaksi yang kena refund — kalau begitu rasionya akan terbaca seolah hampir seluruh bulan
-  dikembalikan);
-- produk yang paling banyak dikembalikan, dialokasikan memakai porsi subtotal sebelum diskon;
-- daftar transaksi refund terbesar, masing-masing bisa dibuka ke rincian pesanannya.
+Rasio keduanya memakai penyebut yang berbeda, masing-masing yang benar untuk angkanya sendiri:
+rasio batal terhadap **nilai seluruh pesanan** bulan itu, rasio pengembalian terhadap pendapatan
+kotor **sebelum refund** (bukan hanya transaksi yang kena refund — kalau begitu rasionya akan
+terbaca seolah hampir seluruh bulan dikembalikan).
 
-Halaman yang sama juga memuat **pesanan batal & retur**, dan keduanya sengaja disandingkan
-karena sering tertukar:
+Kedua peristiwanya disandingkan karena sering tertukar:
 
 | | Uangnya | Angkanya dari |
 | --- | --- | --- |
@@ -353,10 +355,7 @@ karena sering tertukar:
 | **Pengembalian dana** | dana sudah **cair lalu ditarik kembali** | kolom pengembalian pada berkas **penghasilan** |
 
 Karena itu jumlah pesanan batal hampir selalu jauh lebih besar daripada jumlah transaksi
-pengembalian. Bagian pembatalannya menampilkan nilai yang tidak jadi beserta rasionya terhadap
-seluruh nilai pesanan, rekap per bulan per platform, **alasan pembatalan** (stok kosong dan
-keterlambatan kirim ada di tangan Anda; pembeli berubah pikiran tidak), dan daftar pesanan batal
-terbesar — semuanya bisa diekspor CSV.
+pengembalian.
 
 > Khusus Shopee, pesanan yang returnya disetujui tetap ditulis berstatus **Selesai** — penandanya
 > ada di kolom terpisah. Pesanan seperti itu masuk ke bagian *pengembalian dana*, bukan ke bagian
