@@ -44,7 +44,7 @@ $tabLaporan = [
     'belum_selesai' => 'monitoring', 'belum_cair' => 'monitoring',
     'missing_cost' => 'costs', 'cost_check' => 'costs',
     'expenses' => 'expenses',
-    'refunds' => 'refunds', 'refund_product' => 'refunds',
+    'refunds' => 'refunds', 'refund_product' => 'refunds', 'batal' => 'refunds',
 ];
 if (!isset($tabLaporan[$report]) || !Auth::can($tabLaporan[$report])) {
     http_response_code(403);
@@ -265,6 +265,15 @@ switch ($report) {
             $r['total_biaya'], $r['penyesuaian'],
             round((float) $r['selisih'], 2), $r['dana_diterima'],
         ], $rows));
+
+    case 'batal':
+        csvOut("pesanan_batal_{$stamp}.csv", [
+            'Platform', 'No Pesanan', 'Tanggal Pesanan', 'Status', 'Jenis', 'Qty', 'Nilai',
+            'Alasan Pembatalan', 'Dibatalkan Oleh',
+        ], array_map(static fn($r) => [
+            $r['platform'], $r['order_id'], $r['order_date'], $r['status_raw'], $r['status_norm'],
+            $r['total_qty'], round((float) $r['nilai'], 2), $r['cancel_reason'], $r['cancel_by'],
+        ], Reports::batalList($from, $to, $platform, 100000)));
 
     case 'refunds':
         $rows = Reports::refundList($from, $to, $platform, 100000);

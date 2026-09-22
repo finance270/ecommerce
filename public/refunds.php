@@ -4,11 +4,17 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/_layout.php';
 
 /**
- * Laporan pengembalian dana, berdiri sendiri.
+ * Penjualan yang tidak jadi - dua peristiwa berbeda dalam satu halaman.
  *
- * Pengembalian tidak lagi muncul sebagai baris pengurang di laporan laba rugi
- * karena pendapatan kotor di sana sudah bersih dari refund. Supaya angkanya
- * tetap bisa dipantau, seluruh rinciannya dikumpulkan di halaman ini.
+ *   BATAL & RETUR   pesanan yang berhenti sebelum tuntas. Platform tidak
+ *                   pernah membayarkannya, jadi tidak ada uang yang bergerak;
+ *                   nilainya diambil dari tabel pesanan.
+ *   PENGEMBALIAN    uang yang sudah cair lalu ditarik kembali. Nilainya ada
+ *                   di berkas penghasilan, dan sudah dipotong dari pendapatan
+ *                   kotor di Laba & Biaya.
+ *
+ * Keduanya sengaja disandingkan karena sering tertukar: jumlah pesanan batal
+ * hampir selalu jauh lebih besar daripada jumlah transaksi pengembalian.
  */
 
 Auth::requireTab('refunds');
@@ -16,6 +22,11 @@ Auth::requireTab('refunds');
 
 [$from, $to] = dateRange();
 $platform = platformFilter();
+
+$batal       = Reports::batalSummary($from, $to, $platform);
+$batalBulan  = Reports::batalByMonth($from, $to, $platform);
+$batalAlasan = Reports::batalByReason($from, $to, $platform, 30);
+$batalDaftar = Reports::batalList($from, $to, $platform, 200);
 
 $ring   = Reports::refundSummary($from, $to, $platform);
 $bulan  = Reports::refundByMonth($from, $to, $platform);
@@ -25,30 +36,174 @@ $daftar = Reports::refundList($from, $to, $platform, 200);
 $refund = (float) ($ring['refund'] ?? 0);
 $rasio  = $ring['rasio'] ?? null;
 
-render_head('Pengembalian', 'refunds');
+render_head('Batal & Retur', 'refunds');
 ?>
-<h1>Pengembalian Dana</h1>
+<h1>Pembatalan &amp; Pengembalian Dana</h1>
 <p class="sub">
-  Berbasis <b>tanggal pesanan</b>, sama seperti laporan Laba &amp; Biaya &mdash; pengembalian
-  melekat pada pesanan yang dikembalikan, bukan pada hari uangnya bergerak. Bedanya, di sini
-  syarat status <b>selesai</b> tidak dipakai, jadi pesanan yang berakhir retur pun ikut terhitung.
-  Nilainya <b>sudah dipotong</b> dari pendapatan kotor di Laba &amp; Biaya: barang yang
-  dikembalikan berarti penjualannya tidak jadi, jadi tidak dihitung sebagai omzet lalu
-  dikurangi lagi.
+  Dua hal yang sering tertukar, dan keduanya sama-sama <b>tidak masuk omzet</b> di Laba &amp; Biaya.
+  Seluruhnya berbasis <b>tanggal pesanan</b>, sama seperti laporan Laba &amp; Biaya.
 </p>
+<div class="table-wrap" style="margin-bottom:18px">
+  <table>
+    <thead><tr><th style="width:150px">Yang terjadi</th><th>Uangnya</th><th>Angkanya dari</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Batal / retur</b></td>
+        <td>Platform <b>tidak pernah membayarkannya</b>, jadi tidak ada yang dikembalikan
+            &mdash; nilainya sekadar penjualan yang tidak jadi.</td>
+        <td class="muted">nilai produk pada berkas <b>pesanan</b></td>
+      </tr>
+      <tr>
+        <td><b>Pengembalian dana</b></td>
+        <td>Dana sudah <b>cair lalu ditarik kembali</b> oleh platform. Sudah dipotong dari
+            pendapatan kotor di Laba &amp; Biaya, jadi tidak dikurangi dua kali.</td>
+        <td class="muted">kolom pengembalian pada berkas <b>penghasilan</b></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 <p class="sub" style="margin-top:-8px">
-  <b>Pesanan batal bukan pengembalian dan tidak muncul di sini.</b> Pesanan yang batal sebelum
-  dananya cair tidak pernah dibayarkan platform, jadi tidak ada yang dikembalikan &mdash; nilainya
-  hanya penjualan yang tidak pernah terjadi, dan memang tidak pernah masuk omzet. Angka di halaman
-  ini adalah uang yang <b>benar-benar sudah masuk lalu dikembalikan</b> ke pembeli, jadi wajar
-  jauh lebih kecil daripada nilai pembatalan.
+  Karena itu jumlah pesanan batal hampir selalu <b>jauh lebih besar</b> daripada jumlah transaksi
+  pengembalian &mdash; keduanya memang mengukur hal yang berbeda.
+  <?php if ($platform === 'shopee' || $platform === null): ?>
+    Khusus Shopee, pesanan yang returnya disetujui tetap ditulis berstatus <b>Selesai</b>, jadi
+    pesanan itu masuk ke bagian <b>pengembalian dana</b>, bukan ke bagian batal.
+  <?php endif; ?>
 </p>
 
 <?php render_filter($from, $to, $platform); ?>
 
+<h2 style="margin:22px 0 10px">Pesanan batal &amp; retur</h2>
+
+<?php if ($batal['pesanan'] === 0): ?>
+  <div class="alert ok"><b>Tidak ada pesanan batal maupun retur</b> pada rentang ini.</div>
+<?php else: ?>
+<div class="kpis">
+  <div class="kpi <?= $batal['rasio'] !== null && $batal['rasio'] > 10 ? 'bad' : '' ?>">
+    <div class="label">Nilai pesanan batal</div>
+    <div class="value"><?= rp($batal['nilai'], true) ?></div>
+    <div class="hint">penjualan yang tidak jadi &mdash; uangnya tidak pernah masuk</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Terhadap nilai seluruh pesanan</div>
+    <div class="value"><?= $batal['rasio'] === null ? '-' : num($batal['rasio'], 2) . '%' ?></div>
+    <div class="hint">dari <?= rp($batal['nilai_total'], true) ?> seluruh pesanan</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Pesanan batal / retur</div>
+    <div class="value"><?= num($batal['pesanan']) ?></div>
+    <div class="hint">
+      <?= num($batal['batal']) ?> batal &middot; <?= num($batal['retur']) ?> retur &mdash;
+      <?= $batal['rasio_pesanan'] === null ? '-' : num($batal['rasio_pesanan'], 2) . '%' ?>
+      dari <?= num($batal['pesanan_total']) ?> pesanan
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>
+    Pembatalan per bulan
+    <a class="btn ghost sm" href="<?= e(exportLink('batal')) ?>">Ekspor CSV</a>
+  </h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Bulan</th><th>Platform</th><th class="num">Batal</th><th class="num">Retur</th>
+        <th class="num">Nilai tidak jadi</th><th class="num">Nilai seluruh pesanan</th>
+        <th class="num">Rasio</th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($batalBulan as $b): $semua = (float) $b['nilai_semua']; ?>
+        <tr>
+          <td class="nowrap"><?= e($b['bulan']) ?></td>
+          <td><?= platformBadge((string) $b['platform']) ?></td>
+          <td class="num"><?= num($b['batal']) ?></td>
+          <td class="num"><?= num($b['retur']) ?></td>
+          <td class="num neg"><?= rp($b['nilai']) ?></td>
+          <td class="num muted"><?= rp($semua) ?></td>
+          <td class="num <?= $semua > 0 && (float) $b['nilai'] / $semua * 100 > 10 ? 'neg' : '' ?>">
+            <?= $semua > 0 ? num((float) $b['nilai'] / $semua * 100, 2) . '%' : '-' ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if ($batalBulan === []): ?><tr><td colspan="7" class="muted">Belum ada data.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<?php if ($batalAlasan !== [] && !(count($batalAlasan) === 1 && $batalAlasan[0]['alasan'] === '(tidak disebutkan)')): ?>
+<div class="card">
+  <h2>Alasan pembatalan</h2>
+  <p class="help" style="margin-top:-4px;margin-bottom:12px">
+    Diambil apa adanya dari kolom alasan pada berkas pesanan. Alasan yang nilainya besar layak
+    ditindaklanjuti &mdash; stok kosong dan keterlambatan kirim ada di tangan Anda, berbeda
+    dengan pembeli yang berubah pikiran.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Alasan</th><th class="num">Pesanan</th><th class="num">Nilai</th><th class="num">Porsi</th></tr></thead>
+      <tbody>
+      <?php foreach ($batalAlasan as $r): ?>
+        <tr>
+          <td class="trunc" title="<?= e($r['alasan']) ?>"><?= e($r['alasan']) ?></td>
+          <td class="num"><?= num($r['pesanan']) ?></td>
+          <td class="num neg"><?= rp($r['nilai']) ?></td>
+          <td class="num muted"><?= pct((float) $r['nilai'], $batal['nilai']) ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
+
+<div class="card">
+  <h2>Pesanan batal terbesar</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Tanggal pesanan</th><th>Platform</th><th>No. Pesanan</th><th>Status</th>
+        <th class="num">Qty</th><th class="num">Nilai</th><th>Alasan</th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($batalDaftar as $r): ?>
+        <tr>
+          <td class="nowrap"><?= shortDate($r['order_date']) ?></td>
+          <td><?= platformBadge((string) $r['platform']) ?></td>
+          <td class="nowrap">
+            <?php if (Auth::can('orders')): ?>
+              <a href="order.php?platform=<?= e($r['platform']) ?>&amp;id=<?= urlencode((string) $r['order_id']) ?>"><?= e($r['order_id']) ?></a>
+            <?php else: ?>
+              <code class="k"><?= e($r['order_id']) ?></code>
+            <?php endif; ?>
+          </td>
+          <td><span class="badge <?= $r['status_norm'] === 'retur' ? 'warn' : 'bad' ?>"><?= e($r['status_raw'] ?: $r['status_norm']) ?></span></td>
+          <td class="num"><?= num($r['total_qty']) ?></td>
+          <td class="num neg"><?= rp($r['nilai']) ?></td>
+          <td class="trunc muted" style="font-size:12px" title="<?= e((string) $r['cancel_reason']) ?>">
+            <?= e($r['cancel_reason'] !== null && $r['cancel_reason'] !== '' ? $r['cancel_reason'] : '-') ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if ($batalDaftar === []): ?><tr><td colspan="7" class="muted">Belum ada data.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php if (count($batalDaftar) >= 200): ?>
+    <p class="help" style="margin-top:10px">
+      Menampilkan 200 pesanan terbesar. Gunakan Ekspor CSV di atas untuk daftar lengkap.
+    </p>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<h2 style="margin:26px 0 10px">Pengembalian dana</h2>
+
 <?php if ($refund == 0.0): ?>
   <div class="alert ok">
-    <b>Tidak ada pengembalian dana</b> pada rentang ini.
+    <b>Tidak ada pengembalian dana</b> pada rentang ini &mdash; tidak ada uang yang sudah cair
+    lalu ditarik kembali.
   </div>
 <?php else: ?>
 

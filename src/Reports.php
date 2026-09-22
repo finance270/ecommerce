@@ -1580,6 +1580,131 @@ final class Reports
     }
 
     // -----------------------------------------------------------------
+    // Pesanan batal & retur - penjualan yang tidak pernah jadi
+    // -----------------------------------------------------------------
+
+    /**
+     * Pesanan yang berhenti sebagai BATAL atau RETUR.
+     *
+     * Berbeda sama sekali dengan pengembalian dana di bawah. Pesanan batal
+     * tidak pernah dibayarkan platform - tidak ada baris settlement sama
+     * sekali - sehingga tidak ada uang yang dikembalikan; nilainya sekadar
+     * penjualan yang tidak jadi. Karena itu ukurannya diambil dari TABEL
+     * PESANAN (nilai produk setelah diskon), bukan dari settlement.
+     *
+     * Catatan lapangan: Shopee menandai pesanan yang returnya disetujui
+     * tetap sebagai "Selesai" - penandanya ada di kolom terpisah. Pesanan
+     * seperti itu tidak masuk hitungan di sini, melainkan muncul sebagai
+     * pengembalian dana, karena memang penjualannya terjadi lalu sebagian
+     * uangnya ditarik kembali.
+     */
+    public static function batalSummary(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
+        $r = Db::one(
+            "SELECT COUNT(*) AS pesanan_total,
+                    SUM(o.status_norm IN ('batal','retur')) AS pesanan,
+                    SUM(o.status_norm = 'batal')            AS batal,
+                    SUM(o.status_norm = 'retur')            AS retur,
+                    COALESCE(SUM(CASE WHEN o.status_norm IN ('batal','retur')
+                                      THEN o.items_subtotal_after END), 0) AS nilai,
+                    COALESCE(SUM(o.items_subtotal_after), 0) AS nilai_total
+             FROM orders o WHERE {$w}",
+            $a
+        ) ?? [];
+
+        $nilaiTotal = (float) ($r['nilai_total'] ?? 0);
+        $pesananTotal = (int) ($r['pesanan_total'] ?? 0);
+        return [
+            'pesanan'       => (int) ($r['pesanan'] ?? 0),
+            'batal'         => (int) ($r['batal'] ?? 0),
+            'retur'         => (int) ($r['retur'] ?? 0),
+            'nilai'         => (float) ($r['nilai'] ?? 0),
+            'pesanan_total' => $pesananTotal,
+            'nilai_total'   => $nilaiTotal,
+            'rasio'         => $nilaiTotal > 0 ? (float) $r['nilai'] / $nilaiTotal * 100 : null,
+            'rasio_pesanan' => $pesananTotal > 0 ? (int) $r['pesanan'] / $pesananTotal * 100 : null,
+        ];
+    }
+
+    /** Pembatalan per bulan pesanan dan platform. */
+    public static function batalByMonth(?string $from, ?string $to, ?string $platform): array
+    {
+        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
+        return Db::all(
+            "SELECT DATE_FORMAT(o.order_date,'%Y-%m') AS bulan, o.platform,
+                    SUM(o.status_norm = 'batal') AS batal,
+                    SUM(o.status_norm = 'retur') AS retur,
+                    COALESCE(SUM(CASE WHEN o.status_norm IN ('batal','retur')
+                                      THEN o.items_subtotal_after END), 0) AS nilai,
+                    COALESCE(SUM(o.items_subtotal_after), 0) AS nilai_semua,
+                    COUNT(*) AS pesanan
+             FROM orders o WHERE {$w}
+             GROUP BY bulan, o.platform
+             HAVING batal + retur > 0
+             ORDER BY bulan DESC, o.platform",
+            $a
+        );
+    }
+
+    /** Produk yang paling sering ikut batal, dinilai dari isi pesanannya. */
+    public static function batalByProduct(?string $from, ?string $to, ?string $platform, int $limit = 100): array
+    {
+        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
+        $limit = max(1, min(1000, $limit));
+        return Db::all(
+            "SELECT COALESCE(NULLIF(i.product_name,''),'(tanpa nama)') AS produk,
+                    COALESCE(i.variation,'') AS variasi,
+                    MAX(i.cost_key)          AS cost_key,
+                    COUNT(DISTINCT o.id)     AS pesanan,
+                    SUM(i.qty)               AS qty,
+                    SUM(i.subtotal_after_disc) AS nilai
+             FROM orders o
+             STRAIGHT_JOIN order_items i ON i.order_pk = o.id
+             WHERE {$w} AND o.status_norm IN ('batal','retur')
+             GROUP BY produk, variasi
+             ORDER BY nilai DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /** Daftar pesanan batal, yang nilainya terbesar lebih dulu. */
+    public static function batalList(?string $from, ?string $to, ?string $platform, int $limit = 200): array
+    {
+        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
+        $limit = max(1, min(100000, $limit));
+        return Db::all(
+            "SELECT o.platform, o.order_id, o.order_date, o.status_raw, o.status_norm,
+                    o.cancel_reason, o.cancel_by, o.total_qty,
+                    o.items_subtotal_after AS nilai
+             FROM orders o
+             WHERE {$w} AND o.status_norm IN ('batal','retur')
+             ORDER BY o.items_subtotal_after DESC, o.order_date DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
+    /** Alasan pembatalan yang paling sering muncul. */
+    public static function batalByReason(?string $from, ?string $to, ?string $platform, int $limit = 30): array
+    {
+        [$w, $a] = self::filter('order_date', $from, $to, $platform, 'o');
+        $limit = max(1, min(200, $limit));
+        return Db::all(
+            "SELECT COALESCE(NULLIF(o.cancel_reason,''),'(tidak disebutkan)') AS alasan,
+                    COUNT(*) AS pesanan,
+                    COALESCE(SUM(o.items_subtotal_after), 0) AS nilai
+             FROM orders o
+             WHERE {$w} AND o.status_norm IN ('batal','retur')
+             GROUP BY alasan
+             ORDER BY nilai DESC
+             LIMIT {$limit}",
+            $a
+        );
+    }
+
+    // -----------------------------------------------------------------
     // Pengembalian dana (refund)
     // -----------------------------------------------------------------
 

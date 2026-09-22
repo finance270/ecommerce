@@ -245,7 +245,7 @@ akan **0**.
 | **HPP** | Impor HPP per produk per bulan + **pemantauan produk yang belum ada HPP** |
 | **Beban** | Impor beban operasional per bulan (gaji, sewa, listrik, packaging, iklan, dll) |
 | **Settlement** | Daftar settlement per pesanan beserta komponen biayanya |
-| **Pengembalian** | Refund per bulan, per produk, dan per transaksi &mdash; laporan tersendiri |
+| **Batal/Retur** | Pesanan yang tidak jadi (batal &amp; retur) dan pengembalian dana &mdash; laporan tersendiri |
 | **Rekonsiliasi** | Pesanan selesai yang dananya belum cair (piutang platform), dan settlement yang berkas pesanannya belum diunggah |
 | **Monitoring** | Kelengkapan per bulan pesanan: mana yang belum selesai, mana yang dananya belum cair, HPP, dan beban |
 | **Riwayat Upload** | Catatan setiap berkas yang pernah diproses, dan penghapusan data per bulan (admin) |
@@ -335,7 +335,7 @@ Di layar hanya 100 teratas yang ditampilkan agar tabelnya enak dibaca, tetapi **
 tetap ikut tercetak** saat dibuat PDF — tidak perlu mengubah pengaturan apa pun lebih dulu.
 Tombol *Tampilkan semua* membuka sisanya di layar bila diperlukan.
 
-Rinciannya dipindah ke menu **Pengembalian** tersendiri:
+Rinciannya dipindah ke menu **Batal/Retur** tersendiri:
 
 - total refund, rasionya terhadap kotor **sebelum** refund, dan berapa pesanan yang terkena;
 - refund per bulan per platform, dengan rasio terhadap kotor **seluruh bulan itu** (bukan hanya
@@ -343,6 +343,24 @@ Rinciannya dipindah ke menu **Pengembalian** tersendiri:
   dikembalikan);
 - produk yang paling banyak dikembalikan, dialokasikan memakai porsi subtotal sebelum diskon;
 - daftar transaksi refund terbesar, masing-masing bisa dibuka ke rincian pesanannya.
+
+Halaman yang sama juga memuat **pesanan batal & retur**, dan keduanya sengaja disandingkan
+karena sering tertukar:
+
+| | Uangnya | Angkanya dari |
+| --- | --- | --- |
+| **Batal / retur** | platform **tidak pernah membayarkannya**, jadi tidak ada yang dikembalikan — nilainya sekadar penjualan yang tidak jadi | nilai produk pada berkas **pesanan** |
+| **Pengembalian dana** | dana sudah **cair lalu ditarik kembali** | kolom pengembalian pada berkas **penghasilan** |
+
+Karena itu jumlah pesanan batal hampir selalu jauh lebih besar daripada jumlah transaksi
+pengembalian. Bagian pembatalannya menampilkan nilai yang tidak jadi beserta rasionya terhadap
+seluruh nilai pesanan, rekap per bulan per platform, **alasan pembatalan** (stok kosong dan
+keterlambatan kirim ada di tangan Anda; pembeli berubah pikiran tidak), dan daftar pesanan batal
+terbesar — semuanya bisa diekspor CSV.
+
+> Khusus Shopee, pesanan yang returnya disetujui tetap ditulis berstatus **Selesai** — penandanya
+> ada di kolom terpisah. Pesanan seperti itu masuk ke bagian *pengembalian dana*, bukan ke bagian
+> batal, karena penjualannya memang terjadi lalu sebagian uangnya ditarik kembali.
 
 Rasio terhadap kotor sengaja memakai pembanding **sebelum** refund, karena itulah dasar yang
 benar untuk mengukur seberapa besar tingkat pengembalian.
@@ -661,7 +679,7 @@ Ini penting agar angka tidak salah tafsir:
   laporan pencairan beberapa hari kemudian, keduanya tetap dibukukan pada bulan pesanan itu.
   Konsekuensinya, **uang masuk dari pesanan periode sebelumnya bukan penjualan periode ini**
   &mdash; dana yang cair Januari atas pesanan Desember tahun lalu hanyalah kas masuk.
-- **Pengembalian** juga memakai **tanggal pesanan**, supaya periodenya sejalan dengan Laba &
+- **Batal/Retur** juga memakai **tanggal pesanan**, supaya periodenya sejalan dengan Laba &
   Biaya. Bedanya, syarat "hanya selesai" tidak dipakai di sana &mdash; pesanan batal dan retur
   justru itulah yang dilaporkan.
 - **Settlement dan Rekonsiliasi** tetap memakai **tanggal dana dilepaskan**, karena kedua
