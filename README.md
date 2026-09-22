@@ -561,9 +561,19 @@ pedagang dalam negeri:
 Walau bisa dikreditkan, kasnya tetap keluar lebih dulu sehingga tetap diperhitungkan saat
 menentukan harga. Isi **0** kalau Anda termasuk yang dibebaskan.
 
-> Kalau pesanan acuan **sudah** dipungut PPh oleh marketplace (data sejak November 2026),
-> nilainya sudah termasuk di biaya platform. Aplikasi mendeteksinya dan menolkan tarif PPh
-> otomatis supaya tidak terhitung dua kali.
+Pemungutannya **baru berjalan 1 November 2026**, dan itu berlaku ke seluruh angka historis:
+laporan yang periodenya sebelum tanggal itu menghitung pajak ini **nol** — bukan karena
+diabaikan, tetapi karena memang tidak pernah dipotong. Penyaringan dilakukan **per baris menurut
+tanggal pesanan**, sehingga periode yang melintasi tanggal itu benar tanpa perlu dipecah dua.
+Berlaku sama di **Laba & Biaya**, **laba per produk**, **rincian produk**, **uji kewajaran HPP**,
+dan pada **Dasar perhitungan** di simulasi harga.
+
+> Dua hal lain juga menolkan tarifnya. Pertama, kalau pesanan acuan **sudah** dipungut PPh oleh
+> marketplace, nilainya sudah termasuk di biaya platform — aplikasi mendeteksinya supaya tidak
+> terhitung dua kali. Kedua, di simulasi harga: *Dasar perhitungan* memakai tarif nol bila
+> pesanan acuannya bertanggal sebelum 1 November 2026, sementara **kotak simulasinya sendiri
+> tetap memakai 0,5%** — harga yang Anda tetapkan sekarang berlaku untuk penjualan berikutnya,
+> yang sudah kena pungutan itu. Isi **0** kalau Anda ingin melihatnya tanpa pajak tersebut.
 
 Karena pajak memotong lebih dulu, marjin setelah pajak selalu lebih kecil daripada marjin di
 **Uji kewajaran HPP** (yang murni dari data settlement). Supaya tidak membingungkan, halaman

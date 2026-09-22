@@ -198,12 +198,25 @@ if ($modeBaru) {
     $perUnit   = static fn(float $total): float => $total / $qty;
 
     // ---- Lapisan pajak ----
-    // Kalau marketplace SUDAH memungut PPh Pasal 22 pada pesanan acuan, nilainya
-    // sudah masuk ke biaya platform. Menambahkannya lagi berarti dihitung dua kali,
-    // jadi tarif awalnya dinolkan dan alasannya diberitahukan.
+    // Dua hal bisa membuat tarif PPh pada DASAR PERHITUNGAN menjadi nol:
+    //
+    //   1. Pemungutannya memang belum berjalan pada tanggal pesanan acuan.
+    //      Pesanan sebelum Tax::PPH_MULAI tidak pernah dipotong, jadi
+    //      mengenakannya di sini akan membuat laba histori tampak lebih kecil
+    //      daripada yang sebenarnya terjadi - dan berbeda dengan Laba & Biaya,
+    //      yang sudah menyaring per tanggal.
+    //   2. Marketplace SUDAH memungutnya pada pesanan acuan, sehingga nilainya
+    //      ikut masuk ke biaya platform. Menambahkannya lagi berarti dihitung
+    //      dua kali.
+    //
+    // Keduanya hanya berlaku untuk histori. Simulasinya sendiri menatap ke
+    // depan: harga yang ditetapkan sekarang berlaku untuk penjualan
+    // berikutnya, jadi tarif awal di kotak simulasi tetap tarif penuh kecuali
+    // platform memang sudah memungutnya.
     $pphSudahDipungut = (float) $dasar['pajak_platform'] > 0;
+    $pphBerlaku = Tax::pphBerlaku((string) ($ref['order_date'] ?? ''));
     $ppnPersen = Tax::PPN_PERSEN;
-    $pphPersen = $pphSudahDipungut ? 0.0 : Tax::PPH_PERSEN;
+    $pphPersen = ($pphSudahDipungut || !$pphBerlaku) ? 0.0 : Tax::PPH_PERSEN;
 
     // Rantai nilai per unit, memakai urutan baku yang sama dengan Laba & Biaya.
     $c = Reports::rantaiLaba([
@@ -225,7 +238,9 @@ if ($modeBaru) {
         'biPct'     => round($c['biaya']    / $c['harga'] * 100, 6),
         'lainPct'   => round($c['lain']     / $c['harga'] * 100, 6),
         'ppn'       => $c['ppn_persen'],
-        'pph'       => $c['pph_persen'],
+        // Bukan $c['pph_persen']: yang nol karena belum berlaku pada pesanan
+        // acuan tetap akan berlaku pada penjualan berikutnya.
+        'pph'       => $pphSudahDipungut ? 0.0 : Tax::PPH_PERSEN,
         'kreditPpn' => false,
         'baru'      => false,
     ];
@@ -448,7 +463,6 @@ if ($modeBaru) {
           </td>
           <td></td>
         </tr>
-        <?php if ($c['pph_persen'] > 0): ?>
         <tr>
           <td>Peredaran bruto tanpa PPN (DPP)</td>
           <td class="num"><?= rp($c['dpp']) ?></td>
@@ -459,15 +473,21 @@ if ($modeBaru) {
           <td></td>
         </tr>
         <tr>
-          <td>Pajak e-commerce <?= num($c['pph_persen'], 1) ?>%</td>
+          <td>Pajak e-commerce <?= num(Tax::PPH_PERSEN, 1) ?>%</td>
           <td class="num neg"><?= rp(-$c['pph']) ?></td>
           <td class="num neg"><?= num($c['pph'] / $c['harga'] * 100, 2) ?>%</td>
           <td class="muted" style="font-size:11.5px">
-            <?= num($c['pph_persen'], 1) ?>% dari DPP &mdash; diskon tidak mengurangi dasarnya
+            <?php if ($pphSudahDipungut): ?>
+              sudah dipungut platform pada pesanan ini &mdash; nilainya sudah ikut di biaya platform
+            <?php elseif (!$pphBerlaku): ?>
+              belum berlaku pada pesanan ini &mdash; dipungut sejak
+              <?= e(date('d/m/Y', strtotime(Tax::PPH_MULAI))) ?>
+            <?php else: ?>
+              <?= num($c['pph_persen'], 1) ?>% dari DPP &mdash; diskon tidak mengurangi dasarnya
+            <?php endif; ?>
           </td>
           <td></td>
         </tr>
-        <?php endif; ?>
 
         <tr style="background:rgba(0,0,0,.02)">
           <td><b>Penjualan bersih</b></td>
@@ -667,6 +687,12 @@ if ($modeBaru) {
     <?php if ($pphSudahDipungut): ?>
       <br><b class="neg">Pesanan acuan ini sudah dipungut PPh oleh marketplace</b>, nilainya sudah termasuk
       di biaya platform. Tarif PPh di atas dinolkan supaya tidak terhitung dua kali.
+    <?php elseif (!$modeBaru && !$pphBerlaku): ?>
+      <br><b>Pesanan acuannya bertanggal <?= e(shortDate($ref['order_date'])) ?></b>, sebelum pemungutan
+      dimulai, jadi pada <i>Dasar perhitungan</i> di atas pajaknya <b>nol</b> &mdash; memang tidak
+      pernah dipotong. Kotak simulasi di bawah tetap memakai
+      <b><?= num(Tax::PPH_PERSEN, 1) ?>%</b>, karena harga yang Anda tetapkan sekarang berlaku untuk
+      penjualan berikutnya. Isi <b>0</b> kalau Anda ingin melihat angkanya tanpa pajak itu.
     <?php endif; ?>
   </div>
 

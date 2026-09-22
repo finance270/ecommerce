@@ -1075,7 +1075,16 @@ final class Reports
                     SUM(st.gross_amount   * i.subtotal_before_disc / o.items_subtotal_before) AS kotor,
                     SUM(st.total_potongan * i.subtotal_before_disc / o.items_subtotal_before) AS potongan,
                     SUM(st.net_amount * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
-                    SUM(i.qty * pc.cost_per_unit) AS hpp
+                    SUM(i.qty * pc.cost_per_unit) AS hpp,
+                    -- Pajak e-commerce dihitung per baris supaya bulan yang
+                    -- pemungutannya memang belum berjalan tidak ikut dipotong.
+                    " . self::pphSql(
+                        'st.period_awal',
+                        'st.gross_amount * i.subtotal_before_disc / o.items_subtotal_before'
+                        . ' - (st.gross_amount + st.total_potongan)'
+                        . ' * i.subtotal_before_disc / o.items_subtotal_before * '
+                        . (Tax::PPN_PERSEN / (100 + Tax::PPN_PERSEN))
+                    ) . " AS pph_nominal
              FROM ({$sub}) st
              STRAIGHT_JOIN orders o
                  ON o.platform = st.platform AND o.order_id = st.order_id
@@ -1375,7 +1384,9 @@ final class Reports
         }
 
         return Db::one(
-            "SELECT o.platform, o.order_id, MAX(s.settlement_date) AS settlement_date
+            "SELECT o.platform, o.order_id,
+                    MAX(o.order_date)       AS order_date,
+                    MAX(s.settlement_date)  AS settlement_date
              FROM order_items i
              STRAIGHT_JOIN orders o
                  ON o.id = i.order_pk AND o.items_subtotal_before > 0
@@ -1539,7 +1550,14 @@ final class Reports
                     SUM(st.total_fee      * i.subtotal_before_disc / o.items_subtotal_before) AS biaya,
                     SUM(st.net_amount     * i.subtotal_before_disc / o.items_subtotal_before) AS bersih,
                     SUM(i.qty * COALESCE(pc.cost_per_unit,0))          AS hpp,
-                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END) AS qty_tanpa_hpp
+                    SUM(CASE WHEN pc.id IS NULL THEN i.qty ELSE 0 END) AS qty_tanpa_hpp,
+                    " . self::pphSql(
+                        'st.period_awal',
+                        'st.gross_amount * i.subtotal_before_disc / o.items_subtotal_before'
+                        . ' - (st.gross_amount + st.total_potongan)'
+                        . ' * i.subtotal_before_disc / o.items_subtotal_before * '
+                        . (Tax::PPN_PERSEN / (100 + Tax::PPN_PERSEN))
+                    ) . " AS pph_nominal
              FROM ({$sub}) st
              STRAIGHT_JOIN orders o
                  ON o.platform = st.platform AND o.order_id = st.order_id
