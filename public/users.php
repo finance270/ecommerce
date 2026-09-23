@@ -46,14 +46,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Username sudah dipakai.');
                 }
 
+                // Kolom laba_access baru ada setelah migrasi dijalankan.
+                // Selama belum, pengguna tetap bisa disimpan - haknya hanya
+                // belum bisa dibatasi.
+                $kolomLaba = Db::adaKolom('users', 'laba_access');
                 Db::q(
-                    'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access, laba_access)
-                     VALUES (?,?,?,?,?,?,?)',
-                    [
+                    'INSERT INTO users (username, password_hash, full_name, role, permissions, salary_access'
+                    . ($kolomLaba ? ', laba_access' : '') . ')
+                     VALUES (?,?,?,?,?,?' . ($kolomLaba ? ',?' : '') . ')',
+                    array_merge([
                         $username, password_hash($pass, PASSWORD_DEFAULT),
                         $name !== '' ? $name : $username, $role,
-                        json_encode(tabsFromPost()), $salary, $laba,
-                    ]
+                        json_encode(tabsFromPost()), $salary,
+                    ], $kolomLaba ? [$laba] : [])
                 );
                 $notes[] = 'Pengguna ' . $username . ' dibuat.';
             } elseif ($act === 'update') {
@@ -85,12 +90,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Ini satu-satunya admin aktif. Buat admin lain dulu sebelum mengubahnya.');
                 }
 
+                $kolomLaba = Db::adaKolom('users', 'laba_access');
                 Db::q(
-                    'UPDATE users SET full_name=?, role=?, permissions=?, salary_access=?, laba_access=?, is_active=? WHERE id=?',
-                    [
+                    'UPDATE users SET full_name=?, role=?, permissions=?, salary_access=?'
+                    . ($kolomLaba ? ', laba_access=?' : '') . ', is_active=? WHERE id=?',
+                    array_merge([
                         trim((string) ($_POST['full_name'] ?? '')) ?: $target['username'],
-                        $role, json_encode(tabsFromPost()), $salary, $laba, $aktif, $id,
-                    ]
+                        $role, json_encode(tabsFromPost()), $salary,
+                    ], $kolomLaba ? [$laba] : [], [$aktif, $id])
                 );
 
                 $newPass = (string) ($_POST['password'] ?? '');
@@ -169,6 +176,15 @@ render_head('Pengguna', 'users');
   Mengatur siapa boleh membuka tab apa. Peran <b>admin</b> selalu punya seluruh akses dan
   merupakan satu-satunya peran yang boleh <b>menghapus</b> data.
 </p>
+
+<?php if (!Db::adaKolom('users', 'laba_access')): ?>
+  <div class="alert warn">
+    <b>Pembaruan database belum dijalankan.</b> Pengaturan <b>Akses laba</b> &mdash; membatasi
+    sebuah akun sampai <i>penjualan bersih</i> saja &mdash; belum bisa dipakai sebelum kolomnya
+    dibuat. Semua hal lain di halaman ini tetap berjalan normal.
+    <a class="btn ghost sm" href="setup.php">Jalankan Setup sekali &rarr;</a>
+  </div>
+<?php endif; ?>
 
 <?php foreach ($errors as $er): ?><div class="alert bad"><?= e($er) ?></div><?php endforeach; ?>
 <?php foreach ($notes as $n): ?><div class="alert ok"><?= e($n) ?></div><?php endforeach; ?>
@@ -308,7 +324,7 @@ $tautanDireksi = $asal . $basis . '/direksi.php?db=' . Tenant::kodeAktif();
       </div>
       <div class="field">
         <label>Akses laba</label>
-        <select name="laba_access">
+        <select name="laba_access" <?= Db::adaKolom('users', 'laba_access') ? '' : 'disabled' ?>>
           <option value="all" <?= ($edit['laba_access'] ?? 'all') !== 'penjualan' ? 'selected' : '' ?>>
             Seluruh rantai sampai laba bersih
           </option>
@@ -317,8 +333,13 @@ $tautanDireksi = $asal . $basis . '/direksi.php?db=' . Tenant::kodeAktif();
           </option>
         </select>
         <div class="muted" style="font-size:11.5px;margin-top:4px;text-transform:none;letter-spacing:0">
-          Pilihan kedua menyembunyikan biaya platform, HPP, dan seluruh baris laba.
-          Angka penjualan tetap terlihat utuh.
+          <?php if (Db::adaKolom('users', 'laba_access')): ?>
+            Pilihan kedua menyembunyikan biaya platform, HPP, dan seluruh baris laba.
+            Angka penjualan tetap terlihat utuh.
+          <?php else: ?>
+            <b class="neg">Belum aktif.</b> Buka <a href="setup.php">Setup</a> sekali untuk
+            menjalankan pembaruan database, lalu pilihan ini bisa dipakai.
+          <?php endif; ?>
         </div>
       </div>
       <?php if ($edit !== null): ?>

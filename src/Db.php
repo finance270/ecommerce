@@ -40,6 +40,34 @@ final class Db
         return self::$pdo;
     }
 
+    /**
+     * Apakah sebuah kolom sudah ada di database yang sedang aktif.
+     *
+     * Dipakai oleh halaman yang menulis kolom hasil pembaruan: aplikasi bisa
+     * saja sudah diperbarui sementara migrasinya belum dijalankan, dan kalau
+     * tidak diperiksa lebih dulu, menyimpan data akan gagal dengan pesan
+     * "Unknown column" yang tidak berarti apa-apa bagi pengguna. Hasilnya
+     * disimpan per permintaan supaya tidak menanyakan skema berulang kali.
+     */
+    public static function adaKolom(string $tabel, string $kolom): bool
+    {
+        static $cache = [];
+        $kunci = $tabel . '.' . $kolom;
+        if (isset($cache[$kunci])) {
+            return $cache[$kunci];
+        }
+        try {
+            $st = self::conn()->prepare(
+                'SELECT COUNT(*) FROM information_schema.columns
+                  WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+            );
+            $st->execute([$tabel, $kolom]);
+            return $cache[$kunci] = ((int) $st->fetchColumn() > 0);
+        } catch (Throwable) {
+            return $cache[$kunci] = false;
+        }
+    }
+
     /** Cek apakah koneksi + skema sudah siap. */
     public static function isInstalled(): bool
     {
